@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>مصاريفي</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="app.css">
+  <script src="vendor/supabase.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div id="boot" class="boot"><div class="spinner"></div></div>
+
+  <!-- ───────── Login ───────── -->
+  <section id="auth" class="auth" hidden>
+    <div class="auth-card">
+      <img src="icons/icon-192.png" alt="" class="auth-logo">
+      <h1>مصاريفي</h1>
+      <p class="muted">سجّل مصاريفك بالصوت والصورة – والتطبيق يفرز ويجمع كل شيء.</p>
+      <form id="auth-form" data-mode="login" novalidate>
+        <label>البريد الإلكتروني
+          <input type="email" name="email" autocomplete="email" inputmode="email" required>
+        </label>
+        <label>كلمة المرور
+          <input type="password" name="password" autocomplete="current-password" required minlength="8">
+        </label>
+        <button class="btn primary block" type="submit" id="auth-submit">دخول</button>
+        <p id="auth-msg" class="msg" hidden></p>
+        <div class="auth-links">
+          <button type="button" class="link" id="auth-toggle">أول مرة؟ إنشاء الحساب</button>
+          <button type="button" class="link" id="auth-forgot">نسيت كلمة المرور؟</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ───────── App ───────── -->
+  <div id="app" hidden>
+    <header class="top">
+      <div class="brand"><img src="icons/icon-192.png" alt=""><span>مصاريفي</span></div>
+      <div class="top-actions">
+        <span id="offline" class="badge warn" hidden>بدون إنترنت</span>
+        <button id="btn-install" class="btn small" hidden>📲 تثبيت التطبيق</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- Add -->
+      <section id="view-add" class="view active">
+        <div class="summary">
+          <div class="sum"><span>اليوم</span><b id="sum-today" class="num">–</b></div>
+          <div class="sum"><span>هذا الأسبوع</span><b id="sum-week" class="num">–</b></div>
+          <div class="sum"><span>هذا الشهر</span><b id="sum-month" class="num">–</b></div>
+        </div>
+        <div id="banners"></div>
+
+        <div class="recorder">
+          <button id="btn-mic" class="mic" type="button" aria-label="تسجيل صوتي">
+            <svg class="ic-mic" viewBox="0 0 24 24" width="46" height="46" fill="currentColor" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+            <svg class="ic-stop" viewBox="0 0 24 24" width="40" height="40" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          </button>
+          <div id="rec-status" class="rec-status">اضغط وتكلّم</div>
+          <div id="rec-time" class="rec-time num"></div>
+          <div class="rec-hint">قل المبلغ والغاية بكلامك العادي، مثلاً: «علبتين دخان بعشرين يورو» أو «غدا مع زبون بخمسة وتلاتين للمكتب»</div>
+        </div>
+
+        <div class="quick">
+          <button id="btn-camera" class="btn big" type="button">📷 تصوير فاتورة</button>
+          <button id="btn-gallery" class="btn big ghost" type="button">🖼️ من المعرض</button>
+        </div>
+
+        <div id="draft" class="card draft" hidden>
+          <div class="draft-head">صور جاهزة للتحليل</div>
+          <div id="draft-thumbs" class="thumbs"></div>
+          <p class="muted small">أضف تعليقاً صوتياً (الغاية، لمن، لماذا) بالضغط على الميكروفون – أو حلّل مباشرة.</p>
+          <div class="row wrap">
+            <button id="draft-go" class="btn primary" type="button">✅ تحليل الآن</button>
+            <button id="draft-more" class="btn ghost" type="button">📷 صورة أخرى</button>
+            <button id="draft-cancel" class="btn ghost" type="button">إلغاء</button>
+          </div>
+        </div>
+
+        <form id="text-form" class="text-entry" autocomplete="off">
+          <input id="text-input" placeholder="أو اكتب: قهوة للمكتب 4,50" enterkeyhint="send">
+          <button class="btn primary" type="submit">إرسال</button>
+        </form>
+        <div class="center"><button id="btn-manual" class="link" type="button">✍️ إدخال يدوي بدون ذكاء اصطناعي</button></div>
+
+        <div id="queue" class="queue"></div>
+
+        <div class="section-head"><h2>آخر المصاريف</h2><button class="link" data-goto="history" type="button">عرض الكل</button></div>
+        <div id="recent" class="list"></div>
+      </section>
+
+      <!-- History -->
+      <section id="view-history" class="view">
+        <div class="month-nav">
+          <button id="h-prev" class="btn small ghost" type="button">→ السابق</button>
+          <b id="h-month"></b>
+          <button id="h-next" class="btn small ghost" type="button">التالي ←</button>
+        </div>
+        <div class="filters">
+          <input id="h-search" type="search" placeholder="🔍 بحث: متجر، صنف، غاية…">
+          <select id="h-cat"><option value="">كل الفئات</option></select>
+        </div>
+        <div id="h-total" class="h-total"></div>
+        <div id="h-list" class="list"></div>
+      </section>
+
+      <!-- Reports -->
+      <section id="view-reports" class="view">
+        <div class="periods" id="r-periods">
+          <button data-k="week" type="button">هذا الأسبوع</button>
+          <button data-k="lastweek" type="button">الأسبوع الماضي</button>
+          <button data-k="month" type="button" class="active">هذا الشهر</button>
+          <button data-k="lastmonth" type="button">الشهر الماضي</button>
+          <button data-k="year" type="button">هذه السنة</button>
+          <button data-k="custom" type="button">فترة مخصصة</button>
+        </div>
+        <form id="r-custom" class="card r-custom" hidden>
+          <label>من<input type="date" id="r-from" required></label>
+          <label>إلى<input type="date" id="r-to" required></label>
+          <button class="btn primary small" type="submit">عرض</button>
+        </form>
+        <div id="r-body"></div>
+      </section>
+
+      <!-- Settings -->
+      <section id="view-settings" class="view">
+        <div class="card">
+          <h2>الحساب</h2>
+          <p id="s-email" class="muted"></p>
+          <button id="s-logout" class="btn ghost" type="button">تسجيل الخروج</button>
+        </div>
+        <div class="card">
+          <h2>الخيارات</h2>
+          <label class="switch"><input type="checkbox" id="s-autosave"><span>حفظ تلقائي بدون مراجعة (عندما يكون التحليل واضحاً)</span></label>
+          <label class="switch"><input type="checkbox" id="s-location"><span>حفظ موقع الشراء من GPS الهاتف</span></label>
+          <p class="muted small">يُحدَّد اسم المكان من إحداثيات الهاتف عبر OpenStreetMap.</p>
+        </div>
+        <div class="card">
+          <h2>الذكاء الاصطناعي</h2>
+          <p>التحليلات هذا الشهر: <b id="s-usage" class="num">–</b> / <span id="s-limit"></span></p>
+          <p class="muted small">الحد الشهري يحميك من أي تكلفة غير متوقعة (التكلفة تقريباً أقل من سنت واحد لكل تحليل).</p>
+        </div>
+        <div class="card">
+          <h2>الفئات</h2>
+          <p class="muted small">اضغط على فئة لتغيير اسمها، أو اكتب اسم فئة موجودة لدمجهما.</p>
+          <div id="s-cats" class="list-compact"></div>
+        </div>
+        <div class="card">
+          <h2>الأصناف</h2>
+          <p class="muted small">اضغط على صنف لتغيير اسمه أو دمجه (مثلاً «سجائر» ← «دخان»).</p>
+          <div id="s-items" class="list-compact"></div>
+        </div>
+        <div class="card">
+          <h2>عن التطبيق</h2>
+          <p class="muted small">مصاريفي – الإصدار <span id="s-version"></span>. بياناتك وصور الفواتير محفوظة في قاعدة بياناتك الخاصة (Supabase، فرانكفورت) ومحمية بكلمة المرور.</p>
+          <button id="s-reload" class="btn ghost small" type="button">🔄 تحديث التطبيق</button>
+        </div>
+      </section>
+    </main>
+
+    <nav class="tabs">
+      <button data-view="add" class="active" type="button">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2Z"/></svg>
+        <span>إضافة</span>
+      </button>
+      <button data-view="history" type="button">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M4 5h16v2H4V5Zm0 6h16v2H4v-2Zm0 6h10v2H4v-2Z"/></svg>
+        <span>السجل</span>
+      </button>
+      <button data-view="reports" type="button">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M5 20V10h3v10H5Zm5.5 0V4h3v16h-3ZM16 20v-7h3v7h-3Z"/></svg>
+        <span>التقارير</span>
+      </button>
+      <button data-view="settings" type="button">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.3 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.3-2.9a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5-2.1-1.6ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z" transform="translate(-1 0)"/></svg>
+        <span>الإعدادات</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="sheet" class="sheet" hidden><div class="sheet-panel" id="sheet-body"></div></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <input type="file" id="file-camera" accept="image/*" capture="environment" hidden>
+  <input type="file" id="file-gallery" accept="image/*" multiple hidden>
+  <datalist id="dl-cats"></datalist>
+  <datalist id="dl-items"></datalist>
+  <datalist id="dl-units"></datalist>
+  <noscript>يحتاج هذا التطبيق إلى تفعيل JavaScript.</noscript>
+</body>
+</html>
