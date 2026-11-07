@@ -30,8 +30,61 @@
 3. **Hosting**: GitHub → *Settings → Pages* → *Deploy from a branch* → `main` / `/docs` → *Save*.
    Jeder Push auf `main` wird automatisch veröffentlicht (Adresse: `https://flexgips-official.github.io/masarifi/`).
    Alternativ möglich: Netlify / Cloudflare Pages / Vercel mit Ausgabeordner `docs` (kein Build-Schritt).
-4. **Supabase** → *Authentication → URL Configuration* → *Site URL* = Adresse der App (z. B. `https://flexgips-official.github.io/masarifi/`).
-5. App auf dem Handy öffnen → „إنشاء الحساب“ → E-Mail bestätigen → anmelden → „تثبيت التطبيق“ / Zum Startbildschirm hinzufügen.
+4. **Supabase** → *Authentication → URL Configuration* → *Site URL* = Adresse der App (`https://flexgips-official.github.io/masarifi/`).
+5. **Supabase** → *Authentication → Sign In / Providers* → *User Signups*: **Confirm email = aus**, *Allow new users to sign up* = an.
+   Grund: Der eingebaute Mail-Dienst von Supabase sendet nur an E-Mail-Adressen des Organisations-Teams
+   (sonst Fehler `email_address_not_authorized`). Da ohnehin nur ein einziges Konto möglich ist (Trigger `only_one_user`),
+   bringt die Bestätigung hier keinen Sicherheitsgewinn.
+6. App auf dem Handy öffnen → „أول مرة؟ إنشاء الحساب“ → E-Mail + Passwort → man ist sofort angemeldet →
+   Chrome-Menü ⋮ → „App installieren“ / „Zum Startbildschirm hinzufügen“.
+
+## Betrieb & Wartung
+
+**Status:** live seit 07.11.2026 – Konto angelegt, App auf dem Handy installiert, erster Sprachtest erfolgreich.
+
+### Weitere Geräte (PC, Tablet)
+Dieselbe Adresse im Browser öffnen und mit demselben Konto über „دخول“ anmelden. Die Daten liegen in Supabase
+und sind auf allen Geräten gleich. Nicht „إنشاء الحساب“ wählen – die Registrierung ist nach dem ersten Konto geschlossen.
+
+### Daten sichern
+- Supabase Free Plan bietet **keine herunterladbaren Datenbank-Backups**. Eigene Sicherung (z. B. monatlich):
+  App → „التقارير“ → Zeitraum („هذه السنة“ oder benutzerdefiniert) → „تصدير إلى Excel (CSV)“.
+  Die CSV enthält jeden Posten mit Datum, Uhrzeit, Geschäft, Ort, Zweck, Kategorie, Menge, Einheit, Preis.
+- Belegfotos liegen im privaten Storage-Bucket `receipts` (Supabase → Storage).
+- Code, Datenbank-Schema (`supabase/migrations/`) und KI-Funktion (`supabase/functions/analyze/`) liegen in diesem Repo.
+
+### Automatische Pausierung (Free Plan)
+- Supabase pausiert Free-Projekte, wenn 7 Tage lang zu wenig Datenbank-Aktivität da ist (Warn-Mail ca. eine Woche vorher).
+  Normale, tägliche Nutzung der App reicht aus.
+- Wenn die App plötzlich keine Verbindung bekommt: <https://supabase.com/dashboard> → Projekt `masarifi` → **Resume project**.
+  Möglich bis 90 Tage nach der Pause; Daten und Einstellungen bleiben erhalten.
+
+### KI: Kosten, Guthaben, Schlüssel
+- Gemessen am 07.11.2026 mit Gemini 3.5 Flash-Lite: Text/Sprache ca. 1.900 Tokens ≈ 0,002 €, Belegfoto ca. 3.500 Tokens
+  ≈ 0,003 € pro Analyse, Antwortzeit 1,5–3 s.
+- Abrechnung über Prepaid-Guthaben in Google AI Studio (*Abrechnung*), automatisches Aufladen aus. Ist das Guthaben leer,
+  meldet die App „رصيد Gemini المدفوع مسبقاً انتهى“ → in AI Studio aufladen. Guthaben verfällt 12 Monate nach dem Kauf.
+- Schlüssel austauschen: AI Studio → neuen Schlüssel erstellen → Supabase *Edge Functions → Secrets* → `GEMINI_API_KEY`
+  überschreiben → alten Schlüssel löschen. Kein neues Deployment nötig.
+- Monatslimit 500 Analysen: `ai_tick()` in `supabase/migrations/001_init.sql` und `AI_MONTHLY_LIMIT` in `docs/config.js`.
+
+### KI-Qualität prüfen
+- Die Regeln für die KI stehen in `SYSTEM` in `supabase/functions/analyze/index.ts`. Nach Änderungen die Funktion neu
+  deployen (`supabase functions deploy analyze --no-verify-jwt` oder über das Dashboard). Die Funktion prüft das Konto selbst
+  über `ai_tick()`, deshalb ist die JWT-Prüfung des Gateways aus.
+- `tests/fixtures/receipt_muster.jpg` ist ein synthetischer Testbeleg (fiktives Geschäft). Erwartet: 9 Posten, Summe 26,62 €,
+  Pfand bei den Getränken, Rabatt als negativer Posten, Zahlung „بطاقة“, Datum 07.11.2026 08:15.
+- Die Edge Function `selftest` ist nur noch ein leerer 404-Platzhalter und kann im Dashboard gelöscht werden.
+
+| Fehlercode | Bedeutung | Abhilfe |
+|---|---|---|
+| `no_key` | `GEMINI_API_KEY` fehlt | Secret in Supabase setzen |
+| `gemini_credits` | Prepaid-Guthaben aufgebraucht | in AI Studio aufladen |
+| `gemini_billing` | kein Billing am Schlüssel | Billing in AI Studio aktivieren |
+| `gemini_key` | Schlüssel ungültig/gesperrt | neuen Schlüssel als Secret setzen |
+| `gemini_quota` | kurzzeitig zu viele Anfragen | eine Minute warten |
+| `limit` | 500 Analysen im Monat erreicht | nächster Monat oder Limit erhöhen |
+| `auth` | nicht angemeldet / fremdes Konto | in der App neu anmelden |
 
 ## Entwicklung
 
