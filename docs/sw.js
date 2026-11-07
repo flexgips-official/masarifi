@@ -1,6 +1,6 @@
 // مصاريفي – service worker: lets the app open without internet (network first, cache as fallback).
 // API calls (Supabase, OpenStreetMap) are never cached.
-const CACHE = 'masarifi-v1.0.2';
+const CACHE = 'masarifi-v1.0.3';
 const SHELL = [
   './',
   './app.css',

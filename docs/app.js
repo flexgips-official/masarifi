@@ -1351,6 +1351,8 @@ function mapAuthError(error) {
   if (/email not confirmed/i.test(m)) return 'لم يتم تأكيد البريد بعد – افتح رسالة التأكيد في بريدك واضغط الرابط';
   if (/database error saving new user|registration closed/i.test(m)) return 'التسجيل مغلق – الحساب موجود مسبقاً. استخدم «دخول».';
   if (/already registered|already been registered/i.test(m)) return 'هذا البريد مسجل مسبقاً – استخدم «دخول»';
+  if (/not authorized|email_address_not_authorized/i.test(m)) return 'خدمة البريد المجانية في Supabase لا ترسل إلى هذا البريد – أوقف «Confirm email» في إعدادات Supabase أو استخدم بريد حساب Supabase';
+  if (/error sending/i.test(m)) return 'تعذر إرسال رسالة البريد الإلكتروني – حاول لاحقاً';
   if (/rate limit|too many|security purposes/i.test(m)) return 'محاولات كثيرة – انتظر قليلاً ثم حاول مجدداً';
   if (/password/i.test(m) && /(weak|short|least|characters)/i.test(m)) return 'كلمة المرور ضعيفة – استخدم 8 أحرف على الأقل مع أرقام';
   if (isNetErr(error)) return 'لا يوجد اتصال بالإنترنت';
