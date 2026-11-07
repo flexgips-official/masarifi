@@ -310,13 +310,285 @@ export function normalizeAnalysis(result, ctx) {
   if (imageCount && expenses.length && !expenses.some((x) => x.image_indexes.length)) {
     expenses[0].image_indexes = [...Array(imageCount).keys()];
   }
-  const needs = !!r.needs_review || expenses.some((x) => x.mismatch || x.total === 0);
+
+  const arr = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
+  const amountOf = (v) => { const n = parseNum(v); return n !== null && n > 0 ? round2(n) : null; };
+  const when = (v) => stampNear(v, createdAt).toISOString();
+
+  const incomes = [];
+  for (const x of arr(r.incomes)) {
+    const amount = amountOf(x.amount);
+    if (amount === null) continue;
+    const from = cleanStr(x.from, 120);
+    incomes.push({
+      received_at: when(x.received_at_local),
+      from: from && isCompany(from) ? COMPANY : from,
+      category: cleanStr(x.category, 80) || 'أخرى',
+      amount,
+      currency: curOf(x.currency),
+      purpose: cleanStr(x.purpose, 200),
+      note: cleanStr(x.note, 500),
+      payment_method: cleanStr(x.payment_method, 30),
+    });
+  }
+
+  const debts = [];
+  for (const x of arr(r.debts)) {
+    const amount = amountOf(x.amount);
+    if (amount === null) continue;
+    let counterparty = cleanStr(x.counterparty, 120) || 'غير معروف';
+    const kind = DEBT_KIND_KEYS.includes(x.kind) && x.kind !== 'personal' ? x.kind : 'personal';
+    if (kind !== 'personal' || isCompany(counterparty)) counterparty = COMPANY;
+    debts.push({
+      direction: x.direction === 'owed' ? 'owed' : 'owe',
+      counterparty,
+      amount,
+      currency: curOf(x.currency),
+      kind,
+      started_at: when(x.started_at_local),
+      due_date: dueDateOf(x.due_date, createdAt),
+      reason: cleanStr(x.reason, 300),
+      note: cleanStr(x.note, 500),
+    });
+  }
+
+  const open = Array.isArray(ctx?.openDebts) ? ctx.openDebts : [];
+  const repayments = [];
+  for (const x of arr(r.repayments)) {
+    const amount = amountOf(x.amount);
+    if (amount === null) continue;
+    const direction = x.direction === 'owed' ? 'owed' : 'owe';
+    let counterparty = cleanStr(x.counterparty, 120) || 'غير معروف';
+    if (isCompany(counterparty)) counterparty = COMPANY;
+    repayments.push({
+      direction,
+      counterparty,
+      amount,
+      paid_at: when(x.paid_at_local),
+      debt_id: matchDebt(open, { ref: cleanStr(x.debt_ref, 20), counterparty, direction }),
+      note: cleanStr(x.note, 500),
+    });
+  }
+
+  const needs = !!r.needs_review || expenses.some((x) => x.mismatch || x.total === 0) || repayments.some((p) => !p.debt_id);
   return {
     transcript: cleanStr(r.transcript, 4000),
     needs_review: needs,
     question: cleanStr(r.question, 500),
     expenses,
+    incomes,
+    debts,
+    repayments,
   };
+}
+
+const curOf = (v) => { const c = (cleanStr(v, 3) || 'EUR').toUpperCase(); return /^[A-Z]{3}$/.test(c) ? c : 'EUR'; };
+
+/** AI local stamp → Date; implausible values (far future / very old) fall back to the recording time */
+function stampNear(v, createdAt) {
+  const d = parseLocalStamp(v);
+  if (!d) return createdAt;
+  const diff = d - createdAt;
+  if (diff > 36 * 3600000 || diff < -2 * 365 * 86400000) return createdAt;
+  return d;
+}
+
+/** "YYYY-MM-DD" due date, only if plausible (≤ 1 year back, ≤ 5 years ahead) */
+export function dueDateOf(v, ref = new Date()) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v ?? '').trim());
+  if (!m) return null;
+  const d = parseLocalStamp(m[0]);
+  if (!d) return null;
+  const diff = d - ref;
+  if (diff < -366 * 86400000 || diff > 5 * 366 * 86400000) return null;
+  return m[0];
+}
+
+// ───────────── income, debts, repayments ─────────────
+export const COMPANY = 'الشركة';
+export const DEFAULT_INCOME_CATEGORIES = ['راتب', 'استرداد مصاريف من الشركة', 'هدية', 'بيع', 'أخرى'];
+export const DEBT_KINDS = { personal: 'شخصي', company_advance: 'سلفة من الشركة', company_loan: 'قرض من الشركة' };
+const DEBT_KIND_KEYS = Object.keys(DEBT_KINDS);
+
+/** Name key for matching people: "أبو محمد" ≈ "ابو محمد" ≈ "أبو  محمّد" */
+export function normalizeName(s) {
+  return String(s ?? '')
+    .toLowerCase()
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+export function isCompany(name) {
+  return /شركه|فيرما|flexgips|firma/.test(normalizeName(name));
+}
+
+/**
+ * Finds the open debt a repayment belongs to.
+ * @param open  [{ ref, id, direction, counterparty, due_date, started_at }]
+ */
+export function matchDebt(open, { ref, counterparty, direction }) {
+  const list = (open || []).filter((d) => d && d.id);
+  if (ref) {
+    const hit = list.find((d) => d.ref === ref);
+    if (hit && hit.direction === direction) return hit.id;
+  }
+  const n = normalizeName(counterparty);
+  if (!n) return null;
+  const same = (d) => d.direction === direction;
+  const byDue = (a, b) => String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'))
+    || String(a.started_at || '').localeCompare(String(b.started_at || ''));
+  let c = list.filter((d) => same(d) && (normalizeName(d.counterparty) === n || (isCompany(d.counterparty) && isCompany(counterparty))));
+  if (!c.length && n.length >= 2) {
+    c = list.filter((d) => { const k = normalizeName(d.counterparty); return same(d) && k.length >= 2 && (k.includes(n) || n.includes(k)); });
+    if (c.length > 1 && new Set(c.map((d) => normalizeName(d.counterparty))).size > 1) return null; // ambiguous
+  }
+  if (!c.length) return null;
+  return c.slice().sort(byDue)[0].id;
+}
+
+/** income (from normalizeAnalysis) → expense-shaped object stored with kind = 'income' */
+export function incomeAsExpense(inc) {
+  return {
+    kind: 'income',
+    spent_at: inc.received_at,
+    merchant: inc.from || null,
+    merchant_address: null,
+    purpose: inc.purpose || null,
+    note: inc.note || null,
+    payment_method: inc.payment_method || null,
+    currency: inc.currency || 'EUR',
+    items: [{ name: inc.category || 'أخرى', name_original: null, category: inc.category || 'أخرى', quantity: 1, unit: null, unit_price: inc.amount, total: inc.amount }],
+    total: inc.amount,
+    ai_total: inc.amount,
+    mismatch: false,
+    image_indexes: [],
+  };
+}
+
+export function debtPayload(d) {
+  return {
+    id: d.id,
+    direction: d.direction === 'owed' ? 'owed' : 'owe',
+    counterparty: cleanStr(d.counterparty, 120) || 'غير معروف',
+    amount: round2(parseNum(d.amount) || 0),
+    currency: d.currency || 'EUR',
+    started_at: d.started_at || new Date().toISOString(),
+    due_date: /^\d{4}-\d{2}-\d{2}$/.test(String(d.due_date || '')) ? d.due_date : null,
+    kind: DEBT_KIND_KEYS.includes(d.kind) ? d.kind : 'personal',
+    reason: cleanStr(d.reason, 300),
+    note: cleanStr(d.note, 500),
+    source: d.source || 'manual',
+    transcript: cleanStr(d.transcript, 4000),
+    ai_model: cleanStr(d.ai_model, 60),
+  };
+}
+
+export function paymentPayload(p) {
+  return {
+    id: p.id,
+    debt_id: p.debt_id,
+    paid_at: p.paid_at || new Date().toISOString(),
+    amount: round2(parseNum(p.amount) || 0),
+    note: cleanStr(p.note, 500),
+    source: p.source || 'manual',
+    transcript: cleanStr(p.transcript, 4000),
+  };
+}
+
+export function daysAr(n) {
+  if (n === 1) return 'يوم واحد';
+  if (n === 2) return 'يومان';
+  if (n >= 3 && n <= 10) return `${n} أيام`;
+  return `${n} يوماً`;
+}
+
+/** paid / remaining / due state of a debt row (v_debts or a fresh debt) */
+export function debtStatus(d, now = new Date()) {
+  const amount = Number(d.amount) || 0;
+  const paid = Number(d.paid) || 0;
+  const remaining = d.remaining !== undefined && d.remaining !== null ? Number(d.remaining) || 0 : Math.max(amount - paid, 0);
+  const settled = !!d.settled_at || remaining <= 0.004;
+  let daysLeft = null;
+  if (d.due_date && !settled) {
+    const due = parseLocalStamp(d.due_date);
+    if (due) daysLeft = Math.round((startOfDay(due) - startOfDay(now)) / 86400000);
+  }
+  return {
+    amount: round2(amount),
+    paid: round2(paid),
+    remaining: round2(remaining),
+    settled,
+    daysLeft,
+    overdue: daysLeft !== null && daysLeft < 0,
+    dueToday: daysLeft === 0,
+    pct: amount ? Math.min(100, Math.max(0, ((amount - remaining) / amount) * 100)) : 0,
+  };
+}
+
+export function dueLabel(st) {
+  if (st.settled) return 'مسدد ✓';
+  if (st.daysLeft === null) return 'بدون موعد';
+  if (st.daysLeft < 0) return `متأخر ${daysAr(-st.daysLeft)}`;
+  if (st.daysLeft === 0) return 'يستحق اليوم';
+  if (st.daysLeft === 1) return 'يستحق غداً';
+  return `يستحق بعد ${daysAr(st.daysLeft)}`;
+}
+
+/** open debts, most urgent first */
+export function openDebts(list, now = new Date()) {
+  return (list || [])
+    .filter((d) => !debtStatus(d, now).settled)
+    .sort((a, b) => String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'))
+      || String(a.started_at || '').localeCompare(String(b.started_at || '')));
+}
+
+export function debtsSummary(list, now = new Date()) {
+  const out = { owe: 0, owed: 0, overdue: 0, soon: 0, open: 0, companyOpen: 0 };
+  for (const d of list || []) {
+    const st = debtStatus(d, now);
+    if (st.settled) continue;
+    out.open++;
+    if (d.direction === 'owed') out.owed += st.remaining; else out.owe += st.remaining;
+    if (d.direction !== 'owed' && (d.kind === 'company_advance' || d.kind === 'company_loan')) out.companyOpen += st.remaining;
+    if (st.overdue) out.overdue++;
+    else if (st.daysLeft !== null && st.daysLeft <= 2) out.soon++;
+  }
+  out.owe = round2(out.owe);
+  out.owed = round2(out.owed);
+  out.companyOpen = round2(out.companyOpen);
+  return out;
+}
+
+/** "لـ أبو محمد" but "للشركة" (لـ + ال) */
+export function toWhom(name) {
+  const n = String(name ?? '').trim();
+  return /^ال/.test(n) ? `لل${n.slice(2)}` : `لـ ${n}`;
+}
+
+export function debtTitle(d) {
+  return d.direction === 'owed' ? `دين لي عند ${d.counterparty}` : `دين عليّ ${toWhom(d.counterparty)}`;
+}
+
+/** Google Calendar "create event" link (all-day event on the due date) */
+export function calendarUrl({ title, date, details = '' }) {
+  const d = parseLocalStamp(date);
+  if (!d) return null;
+  const a = dateKey(d).replace(/-/g, '');
+  const b = dateKey(addDays(d, 1)).replace(/-/g, '');
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${a}/${b}&details=${encodeURIComponent(details)}`;
+}
+
+export function debtCalendarUrl(d, remaining) {
+  const amount = fmtMoney(remaining ?? d.amount, d.currency);
+  const title = d.direction === 'owed' ? `تحصيل دين من ${d.counterparty}: ${amount}` : `سداد دين ${toWhom(d.counterparty)}: ${amount}`;
+  const details = [d.reason ? `السبب: ${d.reason}` : '', d.kind && d.kind !== 'personal' ? DEBT_KINDS[d.kind] : '', 'من تطبيق مصاريفي']
+    .filter(Boolean).join('\n');
+  return calendarUrl({ title, date: d.due_date, details });
 }
 
 /** expense object → payload for the save_expense RPC */
@@ -332,6 +604,7 @@ export function toPayload(e) {
   }));
   return {
     id: e.id,
+    kind: e.kind === 'income' ? 'income' : 'expense',
     spent_at: e.spent_at,
     total: sumItems(items),
     currency: e.currency || 'EUR',
@@ -392,6 +665,31 @@ export function aggregate(rows, range) {
     .map((p) => ({ name: p.name, total: round2(p.total), count: p.exp.size }))
     .sort((a, b) => b.total - a.total);
   if (range) out.series = series(rows, range);
+  return out;
+}
+
+/** income rows of v_items (kind = 'income') → totals by category and by payer */
+export function aggregateIncome(rows) {
+  const out = { total: 0, count: 0, categories: [], sources: [] };
+  const cats = new Map();
+  const srcs = new Map();
+  const ids = new Set();
+  for (const r of rows || []) {
+    const t = Number(r.total) || 0;
+    out.total += t;
+    ids.add(r.expense_id);
+    const c = r.category || 'أخرى';
+    if (!cats.has(c)) cats.set(c, { name: c, total: 0, count: 0 });
+    cats.get(c).total += t;
+    cats.get(c).count += 1;
+    const s = cleanStr(r.merchant) || 'غير محدد';
+    if (!srcs.has(s)) srcs.set(s, { name: s, total: 0 });
+    srcs.get(s).total += t;
+  }
+  out.total = round2(out.total);
+  out.count = ids.size;
+  out.categories = [...cats.values()].map((c) => ({ ...c, total: round2(c.total) })).sort((a, b) => b.total - a.total);
+  out.sources = [...srcs.values()].map((x) => ({ ...x, total: round2(x.total) })).sort((a, b) => b.total - a.total);
   return out;
 }
 
@@ -456,7 +754,7 @@ export function series(rows, range) {
 
 // ───────────── CSV export (Excel-friendly, German locale) ─────────────
 export function toCSV(rows) {
-  const head = ['التاريخ', 'الوقت', 'المتجر', 'المكان', 'الغاية', 'الفئة', 'الصنف', 'الاسم الأصلي', 'الكمية', 'الوحدة', 'سعر الوحدة', 'المبلغ'];
+  const head = ['التاريخ', 'الوقت', 'المتجر', 'المكان', 'الغاية', 'الفئة', 'الصنف', 'الاسم الأصلي', 'الكمية', 'الوحدة', 'سعر الوحدة', 'المبلغ', 'النوع'];
   const q = (v) => {
     const s = v === null || v === undefined ? '' : String(v);
     return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -468,6 +766,7 @@ export function toCSV(rows) {
     lines.push([
       dateKey(d), fmtTime(d), r.merchant, r.place_name || r.merchant_address, r.purpose, r.category, r.name,
       r.name_original, String(Number(r.quantity) || 1).replace('.', ','), r.unit, num(r.unit_price), num(r.total),
+      r.kind === 'income' ? 'وارد' : 'مصروف',
     ].map(q).join(';'));
   }
   return '﻿' + lines.join('\r\n');

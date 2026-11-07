@@ -120,7 +120,7 @@ main { padding: 1rem 1rem calc(var(--nav-h) + 1.5rem + env(safe-area-inset-botto
 
 /* bottom tabs */
 .tabs {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: grid; grid-template-columns: repeat(4, 1fr);
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
 }
 .tabs button {
@@ -284,6 +284,47 @@ body.recording .mic .ic-stop { display: block; }
 .toast.error { background: #b91c1c; }
 .toast.ok { background: #15803d; }
 .toast.warn { background: #b45309; }
+
+/* income */
+.exp.income { border-inline-start: 4px solid var(--ok); }
+.q-item .exp.income { border: 0; }
+.plus { color: var(--ok); }
+.minus { color: var(--danger); }
+
+/* debts */
+.debt { background: var(--card); border-radius: 14px; padding: .8rem .9rem; box-shadow: var(--shadow); cursor: pointer; border-inline-start: 4px solid var(--danger); }
+.debt.owed { border-inline-start-color: var(--ok); }
+.debt.settled { opacity: .7; border-inline-start-color: var(--line); }
+.q-item .debt { box-shadow: none; padding: 0 .6rem; cursor: default; background: transparent; }
+.debt-top { display: flex; justify-content: space-between; align-items: flex-start; gap: .6rem; }
+.debt-title { font-weight: 700; overflow-wrap: anywhere; }
+.debt-amt { text-align: left; white-space: nowrap; }
+.debt-amt b { font-weight: 800; display: block; }
+.debt-amt small { color: var(--muted); }
+.debt-meta { font-size: .84rem; color: var(--muted); margin-top: .2rem; display: flex; flex-wrap: wrap; gap: .3rem .7rem; }
+.due { font-weight: 700; }
+.due.late { color: var(--danger); }
+.due.today { color: var(--warn); }
+.due.soon { color: var(--warn); }
+.due.ok { color: var(--muted); }
+.kind-chip { white-space: nowrap; font-size: .74rem; padding: .1rem .5rem; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-weight: 700; }
+.progress { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; margin-top: .45rem; }
+.progress i { display: block; height: 100%; background: var(--ok); border-radius: 99px; }
+.sum.owe b { color: var(--danger); }
+.sum.owed b { color: var(--ok); }
+.banner.company { background: var(--warn-soft); cursor: default; font-weight: 600; }
+.banner.alert { background: var(--err-soft); }
+.choices { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; }
+.choices .btn { min-height: 36px; }
+.choices .btn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.chooser { display: grid; gap: .6rem; }
+.chooser .btn { justify-content: flex-start; min-height: 58px; font-size: 1.05rem; }
+.chooser .btn small { color: var(--muted); font-weight: 500; margin-inline-start: auto; }
+.pay-list { display: grid; gap: .3rem; margin: .4rem 0 .8rem; }
+.pay-row { display: grid; grid-template-columns: 1fr auto auto; gap: .6rem; align-items: center; font-size: .92rem; padding: .35rem 0; border-bottom: 1px solid var(--line); }
+.pay-row:last-child { border-bottom: 0; }
+.cal-link { display: flex; align-items: center; justify-content: center; gap: .4rem; text-decoration: none; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
 
 @media (min-width: 640px) {
   .kpis { grid-template-columns: repeat(4, 1fr); }

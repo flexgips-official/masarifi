@@ -4,7 +4,7 @@ End-to-end UI test of the web app in headless Chrome with a mocked backend.
 - the AI function and OpenStreetMap are answered by route handlers
 Run: python3 tests/ui_test.py  (serves ./web on localhost)
 """
-import json, os, re, sys, threading, time, functools, http.server, socketserver
+import json, os, re, sys, threading, time, functools, http.server, socketserver, datetime
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 
@@ -49,7 +49,25 @@ def analyze_handler(route, request):
     analyze_calls.append({'audio': has_audio, 'images': n_images, 'meta': meta,
                           'auth': headers.get('authorization', ''), 'apikey': headers.get('apikey', ''),
                           'audio_type': re.search(rb'name="audio"; filename="[^"]*"\r\nContent-Type: ([^\r]+)', body).group(1).decode() if has_audio else None})
-    if n_images:
+    text = meta.get('text') or ''
+    empty = {'expenses': [], 'incomes': [], 'debts': [], 'repayments': []}
+    due = (datetime.date.today() + datetime.timedelta(days=14)).isoformat()
+    if 'دين لخلال' in text:
+        result = {**empty, 'transcript': text, 'needs_review': False, 'question': None,
+                  'debts': [{'direction': 'owe', 'counterparty': 'أبو محمد', 'amount': 150, 'currency': 'EUR', 'kind': 'personal',
+                             'started_at_local': None, 'due_date': due, 'reason': 'تصليح السيارة', 'note': None}]}
+    elif text.startswith('رجعت'):
+        ref = next((d['ref'] for d in meta.get('open_debts', []) if d['counterparty'] == 'أبو محمد'), None)
+        result = {**empty, 'transcript': text, 'needs_review': False, 'question': None,
+                  'repayments': [{'direction': 'owe', 'counterparty': 'أبو محمد', 'amount': 100, 'paid_at_local': None, 'debt_ref': ref, 'note': None}]}
+    elif 'حساب الشركة' in text:
+        result = {**empty, 'transcript': text, 'needs_review': True,
+                  'question': 'هل هذا المبلغ من الشركة راتب، أم سلفة تُخصم من الراتب، أم استرداد مصاريف دفعتها عن الشركة؟',
+                  'debts': [{'direction': 'owe', 'counterparty': 'الشركة', 'amount': 500, 'currency': 'EUR', 'kind': 'company_advance'}]}
+    elif 'هدية' in text:
+        result = {**empty, 'transcript': text, 'needs_review': False, 'question': None,
+                  'incomes': [{'category': 'هدية', 'amount': 200, 'currency': 'EUR', 'from': 'أبوي'}]}
+    elif n_images:
         result = {'transcript': 'فاتورة من Kaufland مع تعليق: للبيت', 'needs_review': False, 'question': None, 'expenses': [{
             'spent_at_local': None, 'at_current_location': True, 'merchant': 'Kaufland', 'merchant_address': 'Europaallee 1, 50226 Frechen',
             'purpose': 'مشتريات البيت', 'note': None, 'payment_method': 'بطاقة', 'currency': 'EUR', 'total': 9.5, 'image_indexes': [0],
@@ -254,6 +272,8 @@ def main():
         # ── manual entry
         page.click('.tabs [data-view=add]')
         page.click('#btn-manual')
+        expect(page.locator('.chooser')).to_be_visible()
+        page.click('[data-manual=expense]')
         expect(page.locator('#ed')).to_be_visible()
         page.fill('.ed-item .f-name', 'بنزين')
         page.fill('.ed-item .f-cat', 'سيارة ووقود')
@@ -265,6 +285,114 @@ def main():
         fuel = page.evaluate("window.__fake.db.expense_items.find(i => i.name === 'بنزين')")
         assert abs(fuel['total'] - 72) < 0.001 and fuel['quantity'] == 40, fuel
         ok('manual entry with qty × price auto-calculation (40 × 1,80 = 72)')
+
+        # ── v2: debt by text → review → save → offer to add it to Google Calendar
+        today_before = page.locator('#sum-today').inner_text()
+        page.fill('#text-input', 'اخذت من أبو محمد 150 دين لخلال اسبوعين')
+        page.press('#text-input', 'Enter')
+        expect(page.locator('.q-item.review')).to_contain_text('دين عليّ لـ أبو محمد', timeout=15000)
+        expect(page.locator('.q-item.review')).to_contain_text('بعد 14 يوماً')
+        page.locator('.q-item.review').screenshot(path=str(SHOTS / '14_debt_review.png'))
+        page.click('.q-item.review [data-act=save]')
+        expect(page.locator('#cal-go')).to_be_visible(timeout=8000)
+        href = page.get_attribute('#cal-go', 'href')
+        assert href.startswith('https://calendar.google.com/calendar/render?action=TEMPLATE') and 'dates=' in href, href
+        page.wait_for_timeout(300); page.screenshot(path=str(SHOTS / '15_calendar_offer.png'))
+        page.click('#sheet [data-close].btn')
+        expect(page.locator('#sheet')).to_be_hidden(timeout=8000)
+        debts = page.evaluate('window.__fake.db.debts')
+        assert len(debts) == 1 and debts[0]['amount'] == 150 and debts[0]['due_date'] and debts[0]['source'] == 'text', debts
+        ok('debt recorded by text, saved, Google Calendar link offered')
+
+        # ── debts tab
+        page.click('.tabs [data-view=debts]')
+        expect(page.locator('#d-list .debt')).to_have_count(1, timeout=8000)
+        expect(page.locator('#d-owe')).to_contain_text('150,00')
+
+        # ── repayment matched to the open debt through the AI context
+        page.click('.tabs [data-view=add]')
+        page.fill('#text-input', 'رجعت لأبو محمد 100')
+        page.press('#text-input', 'Enter')
+        expect(page.locator('.q-item.review')).to_contain_text('سداد لـ أبو محمد', timeout=15000)
+        call = analyze_calls[-1]
+        assert any(d['counterparty'] == 'أبو محمد' and d['ref'] == 'd1' and d['remaining'] == 150 for d in call['meta'].get('open_debts', [])), call['meta']
+        assert page.locator('.q-item.review select[data-act=pickdebt]').input_value() == debts[0]['id']
+        expect(page.locator('.q-item.review')).to_contain_text('50,00')
+        page.click('.q-item.review [data-act=save]')
+        expect(page.locator('.q-item')).to_have_count(0, timeout=8000)
+        page.click('.tabs [data-view=debts]')
+        expect(page.locator('#d-list .debt')).to_contain_text('50,00', timeout=8000)
+        page.wait_for_timeout(600); page.screenshot(path=str(SHOTS / '16_debts.png'), full_page=True)
+        ok('repayment linked to the right debt (open debts sent to the AI), remaining 50,00')
+
+        # ── unclear company money → provisional advance + one-tap correction to salary
+        page.click('.tabs [data-view=add]')
+        page.fill('#text-input', 'اخذت 500 من حساب الشركة')
+        page.press('#text-input', 'Enter')
+        expect(page.locator('.q-item.review .q-question')).to_contain_text('سلفة', timeout=15000)
+        expect(page.locator('.q-item.review [data-t=advance].on')).to_be_visible()
+        page.locator('.q-item.review').screenshot(path=str(SHOTS / '17_company_question.png'))
+        page.click('.q-item.review [data-t=salary]')
+        expect(page.locator('.q-item.review .exp.income')).to_contain_text('راتب', timeout=8000)
+        page.click('.q-item.review [data-act=save]')
+        expect(page.locator('.q-item')).to_have_count(0, timeout=8000)
+        sal = page.evaluate("window.__fake.db.expenses.find(e => e.kind === 'income')")
+        assert sal and sal['merchant'] == 'الشركة' and abs(sal['total'] - 500) < 0.001, sal
+        assert len(page.evaluate('window.__fake.db.debts')) == 1
+        ok('company money: question shown, switched to salary with one tap, saved as income')
+
+        # ── income (gift) – shown green with +, does not change the spending summary
+        page.fill('#text-input', 'أبوي عطاني هدية 200')
+        page.press('#text-input', 'Enter')
+        expect(page.locator('.q-item.review .exp.income')).to_contain_text('هدية', timeout=15000)
+        page.click('.q-item.review [data-act=save]')
+        expect(page.locator('.q-item')).to_have_count(0, timeout=8000)
+        expect(page.locator('#recent .exp.income').first).to_contain_text('+', timeout=8000)
+        page.wait_for_timeout(500)
+        assert page.locator('#sum-today').inner_text() == today_before, (today_before, page.locator('#sum-today').inner_text())
+        ok('income saved, shown as +, spending summary unchanged')
+
+        # ── reports show income, net and the company card
+        page.click('.tabs [data-view=reports]')
+        page.click('#r-periods [data-k=month]')
+        expect(page.locator('#r-body')).to_contain_text('الوارد', timeout=8000)
+        body = page.locator('#r-body').inner_text()
+        assert '700,00' in body and 'من الشركة' in body and 'ديون جديدة' in body, body[:600]
+        page.screenshot(path=str(SHOTS / '18_reports_income.png'), full_page=True)
+        ok('reports: income total, net, company and new-debts cards')
+
+        # ── debt detail: pay the rest → settled
+        page.click('.tabs [data-view=debts]')
+        page.locator('#d-list .debt').first.click()
+        expect(page.locator('#dd-pays .pay-row')).to_have_count(1, timeout=8000)
+        page.click('#dd-pay')
+        expect(page.locator('#ped input[name=amount]')).to_have_value('50')
+        page.click('#ped button[type=submit]')
+        expect(page.locator('#sheet')).to_be_hidden(timeout=8000)
+        expect(page.locator('#d-list')).to_contain_text('لا توجد ديون مفتوحة', timeout=8000)
+        page.click('#d-filters [data-f=settled]')
+        expect(page.locator('#d-list .debt.settled')).to_have_count(1)
+        page.locator('#d-list .debt.settled').first.click()
+        expect(page.locator('#dd-pays .pay-row')).to_have_count(2, timeout=8000)
+        page.wait_for_timeout(400); page.screenshot(path=str(SHOTS / '19_debt_detail.png'))
+        page.click('#sheet .sheet-head [data-close]')
+        expect(page.locator('#sheet')).to_be_hidden(timeout=8000)
+        ok('debt detail → pay the rest → debt settled')
+
+        # ── manual debt with due date in 1 day → banner on the home screen
+        page.click('#d-new')
+        page.select_option('#ded select[name=direction]', 'owed')
+        page.fill('#ded input[name=counterparty]', 'سامر')
+        page.fill('#ded input[name=amount]', '40')
+        page.fill('#ded input[name=due]', (datetime.date.today() + datetime.timedelta(days=1)).isoformat())
+        page.click('#ded button[type=submit]')
+        expect(page.locator('#cal-go')).to_be_visible(timeout=8000)
+        assert 'calendar.google.com' in page.get_attribute('#cal-go', 'href')
+        page.click('#sheet [data-close].btn')
+        expect(page.locator('#sheet')).to_be_hidden(timeout=8000)
+        page.click('.tabs [data-view=add]')
+        expect(page.locator('#banners .banner.alert')).to_contain_text('سامر', timeout=8000)
+        ok('manual debt (لي) with due date → reminder banner on the home screen')
 
         # ── logout
         page.click('.tabs [data-view=settings]')

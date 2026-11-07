@@ -3,6 +3,10 @@
 تطبيق خاص لتسجيل المصاريف الشخصية والعائلية بالصوت وبصور الفواتير. الذكاء الاصطناعي يفرز كل شيء،
 ويحسب الكميات (مثلاً: دخان 30 علبة = 300 €)، ويعرض تقارير أسبوعية وشهرية وسنوية.
 
+منذ الإصدار 2.0 يسجّل أيضاً **الوارد** (راتب، هدية، استرداد مصاريف…) و**الديون** (عليّ / لي، مع موعد السداد)
+و**السداد** (كامل أو جزئي) – بالصوت أو الكتابة. المال المأخوذ من الشركة يُصنَّف دائماً (راتب / سلفة / استرداد مصاريف / قرض)،
+والسلفة تُسجَّل كدين للشركة حتى تُخصم. الديون ذات الموعد تُضاف بضغطة إلى تقويم Google.
+
 > Private expense tracker (Arabic, RTL, installable PWA). Voice notes + receipt photos → Gemini → structured
 > expenses in Supabase. Separate from all FlexGips company systems.
 
@@ -16,6 +20,9 @@
 | Ortsname aus GPS | OpenStreetMap Nominatim (im Browser) | – |
 
 - Supabase-Projekt: `gnupewfpiboaodsiwmnt` (`https://gnupewfpiboaodsiwmnt.supabase.co`)
+- Tabellen: `expenses` (Ausgaben **und** Einnahmen, Spalte `kind`), `expense_items`, `debts`, `debt_payments`
+  (`settled_at` wird per Trigger automatisch gesetzt), Views `v_items`, `v_debts` (bezahlt/Rest), `ai_usage`.
+- Nächtliche Sicherung: privates Repo `flexgips-official/masarifi-backup` (GitHub Actions, siehe dessen README).
 - Nur **ein** Konto kann sich registrieren (Trigger `only_one_user`), alle Tabellen mit Row Level Security.
 - Kostenbremse: max. 500 KI-Analysen pro Monat (`ai_tick()` in der Datenbank).
 - Offline: Aufnahmen werden im Handy (IndexedDB) gespeichert und automatisch analysiert, sobald wieder Internet da ist.
@@ -41,6 +48,16 @@
 ## Betrieb & Wartung
 
 **Status:** live seit 07.11.2026 – Konto angelegt, App auf dem Handy installiert, erster Sprachtest erfolgreich.
+Version 2.0 (07.11.2026): Einnahmen, Schulden, Rückzahlungen, Firmengeld-Regel, Schulden-Tab, Kalender-Link, nächtliches Backup.
+
+### Beispiele (Sprache oder Text)
+| Gesagt | Ergebnis |
+|---|---|
+| «أخذت من أبو محمد 150 دين لخلال أسبوعين» | Schuld (عليّ) 150 €, fällig in 14 Tagen, Kalender-Angebot |
+| «رجعت لأبو محمد 100» | Rückzahlung, automatisch der offenen Schuld zugeordnet (Rest 50 €) |
+| «أخذت 500 من حساب الشركة» | vorläufig Gehaltsvorschuss (Schuld an die Firma) + Rückfrage Gehalt/Vorschuss/Auslagen |
+| «قبضت الراتب 2000 وانخصم منه 500 سلفة» | Einnahme Gehalt 2500 € + Rückzahlung 500 € an die Firma |
+| «سحبت 200 من الصراف» | nichts (eigenes Geld umgebucht) – mit Hinweis |
 
 ### Weitere Geräte (PC, Tablet)
 Dieselbe Adresse im Browser öffnen und mit demselben Konto über „دخول“ anmelden. Die Daten liegen in Supabase

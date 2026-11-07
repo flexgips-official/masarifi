@@ -178,7 +178,119 @@ test('toCSV – BOM, semicolons, decimal comma, quoting', () => {
   const line = csv.split('\r\n')[1];
   assert.ok(line.startsWith('2026-11-06;09:05;"A;B";'));
   assert.ok(line.includes('"Marlboro ""Gold"""'));
-  assert.ok(line.endsWith(';2;علبة;10;20'));
+  assert.ok(line.endsWith(';2;علبة;10;20;مصروف'));
+  const inc = L.toCSV([{ spent_at: new Date(2026, 10, 6, 9, 5).toISOString(), kind: 'income', merchant: 'الشركة', category: 'راتب', name: 'راتب', quantity: 1, total: 2500 }]);
+  assert.ok(inc.split('\r\n')[1].endsWith(';2500;وارد'));
+});
+
+test('normalizeAnalysis – incomes, debts, repayments, company money', () => {
+  const created = new Date(2026, 10, 7, 10, 30);
+  const open = [
+    { ref: 'd1', id: 'D1', direction: 'owe', counterparty: 'أبو محمد', due_date: '2026-11-21', started_at: '2026-11-01' },
+    { ref: 'd2', id: 'D2', direction: 'owe', counterparty: 'الشركة', kind: 'company_advance', due_date: null, started_at: '2026-10-01' },
+    { ref: 'd3', id: 'D3', direction: 'owed', counterparty: 'سامر', due_date: '2026-11-30', started_at: '2026-11-02' },
+  ];
+  const r = L.normalizeAnalysis({
+    transcript: 't', needs_review: false, question: null, expenses: [],
+    incomes: [{ category: 'راتب', amount: '2500', from: 'FlexGips', currency: 'eur' }, { category: 'هدية', amount: 0 }],
+    debts: [
+      { direction: 'owe', counterparty: 'خالي', amount: 50, kind: 'personal', due_date: '2026-11-21' },
+      { direction: 'owe', counterparty: 'المدير', amount: 500, kind: 'company_advance', due_date: '2099-01-01' },
+      { direction: 'weird', counterparty: '', amount: 10, kind: 'nonsense', due_date: '21.11.2026' },
+    ],
+    repayments: [
+      { direction: 'owe', counterparty: 'ابو  محمّد', amount: 100 },            // name normalisation
+      { direction: 'owe', counterparty: 'الشركة', amount: 500, debt_ref: 'd2' }, // by ref
+      { direction: 'owed', counterparty: 'سامر', amount: 40, debt_ref: 'd1' },   // wrong ref direction → by name
+      { direction: 'owe', counterparty: 'شخص مجهول', amount: 5 },               // unmatched
+    ],
+  }, { createdAt: created, imageCount: 0, openDebts: open });
+  assert.equal(r.incomes.length, 1);
+  assert.equal(r.incomes[0].from, 'الشركة');
+  assert.equal(r.incomes[0].amount, 2500);
+  assert.equal(r.incomes[0].currency, 'EUR');
+  assert.equal(r.debts.length, 3);
+  assert.equal(r.debts[0].due_date, '2026-11-21');
+  assert.equal(r.debts[1].counterparty, 'الشركة');   // company kinds always belong to the company
+  assert.equal(r.debts[1].due_date, null);           // implausible date dropped
+  assert.equal(r.debts[2].direction, 'owe');
+  assert.equal(r.debts[2].kind, 'personal');
+  assert.equal(r.debts[2].counterparty, 'غير معروف');
+  assert.equal(r.debts[2].due_date, null);
+  assert.deepEqual(r.repayments.map((p) => p.debt_id), ['D1', 'D2', 'D3', null]);
+  assert.equal(r.needs_review, true);                // unmatched repayment needs a decision
+});
+
+test('matchDebt – earliest due date wins, ambiguous fuzzy names stay unmatched', () => {
+  const open = [
+    { id: 'A', direction: 'owe', counterparty: 'أحمد', due_date: '2026-12-01' },
+    { id: 'B', direction: 'owe', counterparty: 'احمد', due_date: '2026-11-15' },
+    { id: 'C', direction: 'owe', counterparty: 'أحمد علي', due_date: null },
+    { id: 'D', direction: 'owe', counterparty: 'أحمد سمير', due_date: null },
+  ];
+  assert.equal(L.matchDebt(open, { counterparty: 'أحمد', direction: 'owe' }), 'B');
+  assert.equal(L.matchDebt(open, { counterparty: 'أحمد', direction: 'owed' }), null);
+  assert.equal(L.matchDebt(open, { counterparty: 'علي', direction: 'owe' }), 'C');
+  assert.equal(L.matchDebt(open.slice(2), { counterparty: 'أحمد', direction: 'owe' }), null);
+  assert.ok(L.isCompany('Firma') && L.isCompany('الشركة') && L.isCompany('شركة') && !L.isCompany('أبو محمد'));
+});
+
+test('debts – status, labels, summary, calendar link, payloads', () => {
+  const now = new Date(2026, 10, 7, 10);
+  const late = { direction: 'owe', counterparty: 'أبو محمد', amount: 150, paid: 100, remaining: 50, due_date: '2026-11-05' };
+  const st = L.debtStatus(late, now);
+  assert.equal(st.remaining, 50);
+  assert.equal(st.overdue, true);
+  assert.equal(L.dueLabel(st), 'متأخر يومان');
+  assert.equal(Math.round(st.pct), 67);
+  assert.equal(L.dueLabel(L.debtStatus({ amount: 10, due_date: '2026-11-07' }, now)), 'يستحق اليوم');
+  assert.equal(L.dueLabel(L.debtStatus({ amount: 10, due_date: '2026-11-08' }, now)), 'يستحق غداً');
+  assert.equal(L.dueLabel(L.debtStatus({ amount: 10, due_date: '2026-11-21' }, now)), 'يستحق بعد 14 يوماً');
+  assert.equal(L.dueLabel(L.debtStatus({ amount: 10, paid: 10, remaining: 0 }, now)), 'مسدد ✓');
+  const list = [
+    late,
+    { direction: 'owed', counterparty: 'سامر', amount: 100, remaining: 60, due_date: '2026-11-08' },
+    { direction: 'owe', counterparty: 'الشركة', kind: 'company_advance', amount: 500, remaining: 500, due_date: null },
+    { direction: 'owe', counterparty: 'x', amount: 20, remaining: 0, settled_at: '2026-11-06' },
+  ];
+  assert.deepEqual(L.debtsSummary(list, now), { owe: 550, owed: 60, overdue: 1, soon: 1, open: 3, companyOpen: 500 });
+  assert.deepEqual(L.openDebts(list, now).map((d) => d.counterparty), ['أبو محمد', 'سامر', 'الشركة']);
+  const url = L.debtCalendarUrl({ direction: 'owe', counterparty: 'أبو محمد', amount: 150, due_date: '2026-11-21', reason: 'سيارة' }, 50);
+  assert.ok(url.startsWith('https://calendar.google.com/calendar/render?action=TEMPLATE&text='));
+  assert.ok(url.includes('&dates=20261121/20261122'));
+  assert.ok(decodeURIComponent(url).includes('سداد دين لـ أبو محمد'));
+  assert.equal(L.calendarUrl({ title: 'x', date: 'kein Datum' }), null);
+  const dp = L.debtPayload({ id: 'i', direction: 'x', counterparty: ' ', amount: '12,5', kind: 'bad', due_date: '2026-1-1' });
+  assert.equal(dp.direction, 'owe');
+  assert.equal(dp.counterparty, 'غير معروف');
+  assert.equal(dp.amount, 12.5);
+  assert.equal(dp.kind, 'personal');
+  assert.equal(dp.due_date, null);
+  const pp = L.paymentPayload({ id: 'p', debt_id: 'D', amount: '40' });
+  assert.equal(pp.amount, 40);
+  assert.ok(pp.paid_at);
+  assert.equal(L.daysAr(1), 'يوم واحد');
+  assert.equal(L.daysAr(5), '5 أيام');
+});
+
+test('income – stored as expense row with kind income; aggregation by category and payer', () => {
+  const e = L.incomeAsExpense({ received_at: '2026-11-07T09:00:00.000Z', from: 'الشركة', category: 'راتب', amount: 2500, currency: 'EUR' });
+  const p = L.toPayload({ ...e, id: 'x' });
+  assert.equal(p.kind, 'income');
+  assert.equal(p.total, 2500);
+  assert.equal(p.items[0].category, 'راتب');
+  assert.equal(L.toPayload({ items: [] }).kind, 'expense');
+  const agg = L.aggregateIncome([
+    { expense_id: 'a', category: 'راتب', merchant: 'الشركة', total: 2500 },
+    { expense_id: 'b', category: 'هدية', merchant: 'أبوي', total: 200 },
+    { expense_id: 'c', category: 'راتب', merchant: 'الشركة', total: 100 },
+  ]);
+  assert.equal(agg.total, 2800);
+  assert.equal(agg.count, 3);
+  assert.deepEqual(agg.categories.map((c) => [c.name, c.total]), [['راتب', 2600], ['هدية', 200]]);
+  assert.equal(agg.sources[0].name, 'الشركة');
+  assert.equal(L.dueDateOf('2026-11-31'), null);
+  assert.equal(L.dueDateOf('2026-11-30', new Date(2026, 10, 7)), '2026-11-30');
 });
 
 test('encodeWav writes a valid header', () => {

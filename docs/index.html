@@ -87,14 +87,14 @@
         </div>
 
         <form id="text-form" class="text-entry" autocomplete="off">
-          <input id="text-input" placeholder="أو اكتب: قهوة للمكتب 4,50" enterkeyhint="send">
+          <input id="text-input" placeholder="أو اكتب: قهوة للمكتب 4,50 – أو دين، أو مبلغ وارد" enterkeyhint="send">
           <button class="btn primary" type="submit">إرسال</button>
         </form>
-        <div class="center"><button id="btn-manual" class="link" type="button">✍️ إدخال يدوي بدون ذكاء اصطناعي</button></div>
+        <div class="center"><button id="btn-manual" class="link" type="button">✍️ إدخال يدوي بدون ذكاء اصطناعي (مصروف، وارد، دين)</button></div>
 
         <div id="queue" class="queue"></div>
 
-        <div class="section-head"><h2>آخر المصاريف</h2><button class="link" data-goto="history" type="button">عرض الكل</button></div>
+        <div class="section-head"><h2>آخر الحركات</h2><button class="link" data-goto="history" type="button">عرض الكل</button></div>
         <div id="recent" class="list"></div>
       </section>
 
@@ -111,6 +111,25 @@
         </div>
         <div id="h-total" class="h-total"></div>
         <div id="h-list" class="list"></div>
+      </section>
+
+      <!-- Debts -->
+      <section id="view-debts" class="view">
+        <div class="summary">
+          <div class="sum owe"><span>عليّ (للآخرين)</span><b id="d-owe" class="num">–</b></div>
+          <div class="sum owed"><span>لي (عند الآخرين)</span><b id="d-owed" class="num">–</b></div>
+          <div class="sum"><span>متأخرة</span><b id="d-late" class="num">–</b></div>
+        </div>
+        <div id="d-company" class="banner company" hidden></div>
+        <div class="periods" id="d-filters">
+          <button data-f="open" type="button" class="active">المفتوحة</button>
+          <button data-f="owe" type="button">عليّ</button>
+          <button data-f="owed" type="button">لي</button>
+          <button data-f="settled" type="button">المسددة</button>
+        </div>
+        <button id="d-new" class="btn block" type="button">➕ دين جديد</button>
+        <p class="muted small">أو قل بالصوت مثلاً: «أخذت من أبو محمد 150 دين لخلال أسبوعين» أو «رجعت لأبو محمد 100».</p>
+        <div id="d-list" class="list"></div>
       </section>
 
       <!-- Reports -->
@@ -176,6 +195,10 @@
         <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M4 5h16v2H4V5Zm0 6h16v2H4v-2Zm0 6h10v2H4v-2Z"/></svg>
         <span>السجل</span>
       </button>
+      <button data-view="debts" type="button">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M7 7h11.17l-2.58-2.59L17 3l5 5-5 5-1.41-1.41L18.17 9H7V7Zm10 10H5.83l2.58 2.59L7 21l-5-5 5-5 1.41 1.41L5.83 15H17v2Z"/></svg>
+        <span>الديون</span>
+      </button>
       <button data-view="reports" type="button">
         <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M5 20V10h3v10H5Zm5.5 0V4h3v16h-3ZM16 20v-7h3v7h-3Z"/></svg>
         <span>التقارير</span>
@@ -195,6 +218,8 @@
   <datalist id="dl-cats"></datalist>
   <datalist id="dl-items"></datalist>
   <datalist id="dl-units"></datalist>
+  <datalist id="dl-people"></datalist>
+  <datalist id="dl-inc-cats"></datalist>
   <noscript>يحتاج هذا التطبيق إلى تفعيل JavaScript.</noscript>
 </body>
 </html>
