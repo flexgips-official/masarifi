@@ -341,6 +341,9 @@ Deno.serve(async (req: Request) => {
       const lower = text.toLowerCase();
       console.error(`gemini ${model} HTTP ${r.status}: ${text.slice(0, 800)}`);
 
+      if (r.status === 402 || lower.includes("prepayment") || lower.includes("credits are depleted")) {
+        return fail(402, "gemini_credits", "رصيد Gemini المدفوع مسبقاً انتهى – اشحن الرصيد في Google AI Studio ← Abrechnung", text);
+      }
       if (lower.includes("location is not supported") || (r.status !== 429 && lower.includes("billing"))) {
         const c = classifyGeminiError(r.status, text);
         return fail(402, c.code, c.error, text);

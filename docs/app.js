@@ -518,7 +518,7 @@ async function callAnalyze(it, useWav) {
   const code = (body && body.code) || 'server';
   if (res.status === 540) throw new AppError('server', 'قاعدة البيانات متوقفة مؤقتاً (Supabase يوقف المشاريع المجانية بعد 7 أيام بدون استخدام) – افتح لوحة Supabase واضغط Restore');
   const msg = (body && body.error) || `خطأ من الخادم (${res.status})`;
-  const permanent = ['no_key', 'gemini_billing', 'gemini_key', 'limit', 'auth', 'bad_request', 'too_large', 'audio_format', 'gemini_model'];
+  const permanent = ['no_key', 'gemini_billing', 'gemini_credits', 'gemini_key', 'limit', 'auth', 'bad_request', 'too_large', 'audio_format', 'gemini_model'];
   throw new AppError(permanent.includes(code) ? code : 'server', msg, body && body.detail);
 }
 
