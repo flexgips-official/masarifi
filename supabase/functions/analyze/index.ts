@@ -1,6 +1,7 @@
 // مصاريفي – Edge Function "analyze"
 // Receives a voice note and/or receipt photos and/or typed text, asks Gemini to extract the
-// expenses and returns structured JSON. Nothing is stored here – the app saves the result.
+// expenses, incomes, debts and repayments and returns structured JSON. Nothing is stored here –
+// the app shows the result for review and saves it.
 //
 // Secrets (Supabase → Edge Functions → Secrets):
 //   GEMINI_API_KEY  (required)  – key from Google AI Studio (paid tier → data not used for training)
@@ -38,11 +39,19 @@ function toBase64(bytes: Uint8Array): string {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const SYSTEM = `You are the bookkeeping engine of «مصاريفي», a private expense tracker for one person who lives in Germany.
-He records his personal and family expenses by Arabic voice messages (often Levantine/Syrian dialect, sometimes mixed with German words), by photos of (mostly German) receipts, by both together, or by short typed text.
-Extract every expense precisely and return ONLY JSON that matches the response schema.
+const SYSTEM = `You are the bookkeeping engine of «مصاريفي», a private money tracker for one person who lives in Germany.
+He records his personal and family money matters by Arabic voice messages (often Levantine/Syrian dialect, sometimes mixed with German words), by photos of (mostly German) receipts, by both together, or by short typed text.
+Extract every entry precisely and return ONLY JSON that matches the response schema.
 
-RULES
+ENTRY TYPES
+- expenses: money he spent (goods, services, bills, rent, fees …).
+- incomes: money he received that is his own (salary, gift, sale, refund, reimbursement …).
+- debts: money he borrowed (direction "owe" = عليّ) or lent to someone (direction "owed" = لي). A debt is neither an expense nor an income.
+- repayments: paying back a debt (direction "owe": he pays back what he owed) or getting lent money back (direction "owed": someone pays him back).
+- Not an entry at all: moving his own money between his own accounts or cash (ATM withdrawal from his own account, transfer between his own accounts, depositing cash). Return nothing for it; if that is all the input contains, explain briefly in "question".
+- One message may contain several entries of different types (e.g. "استدنت 50 من خالي ودفعت فيهم بنزين" → one debt + one expense). Arrays without entries are empty.
+
+RULES FOR EXPENSES
 
 1. Expenses and items
 - One expense = one payment at one time and place. One receipt = one expense.
@@ -50,8 +59,6 @@ RULES
 - Every expense has one or more items. The sum of the item totals MUST equal the expense total.
 
 2. Amounts
-- Never invent amounts. Use exactly what was said or printed. Currency is EUR unless clearly stated otherwise.
-- Understand spoken Arabic numbers including dialect, e.g. "خمسطعش" = 15, "ميتين" = 200, "ألف وخمسمية" = 1500, "اتنين ونص" = 2.5, "عشرة وربع" = 10.25. The word "يورو" may be omitted.
 - For receipts the expense total is the amount actually paid (SUMME / GESAMT / ZU ZAHLEN / BAR / EC / KARTE) after discounts.
 - Discounts and coupons (Rabatt, Coupon, Preisvorteil, Aktion) become negative items in the same category as the discounted product.
 - Pfand becomes its own item "رهن العبوات (Pfand)" in the SAME category as the bottle/can it belongs to (usually قهوة ومشروبات). Returned bottles / Pfandbon / Leergut become a negative item "استرجاع العبوات (Pfand)".
@@ -84,15 +91,43 @@ RULES
 
 8. payment_method: "نقداً" or "بطاقة" if said or printed, otherwise null.
 
-9. Review
-- needs_review = true if an amount is missing or unclear, the audio is unintelligible, or you are unsure about an important value. Then ask ONE short Arabic question in "question". Still fill in everything you can.
-- If the input contains no expense at all, return expenses = [] and explain briefly in "question".
+9. image_indexes: the 0-based indexes of the input images that belong to this expense.
 
-10. transcript: write what the user said in Arabic script (keep German words as spoken). If there was no audio, write a one-line Arabic summary of the input (e.g. "فاتورة من Kaufland").
+RULES FOR INCOMES
+- category: a short Arabic category. Reuse KNOWN INCOME CATEGORIES; if there are none yet prefer: راتب، استرداد مصاريف من الشركة، هدية، بيع، أخرى.
+- from: who paid him (e.g. "الشركة", "أبوي", a person or company); null if unknown.
+- amount: positive number. received_at_local like spent_at_local (null = now). purpose / note / payment_method ("نقداً", "تحويل", "بطاقة") as for expenses.
 
-11. image_indexes: the 0-based indexes of the input images that belong to this expense.
+THE COMPANY (very important)
+- "الشركة" is FlexGips, the company where he is the managing director (not the owner). الشركة، حساب الشركة، الفيرما، FlexGips all mean it. Always write it as "الشركة" in from / counterparty.
+- Money he takes or receives from the company is never a gift. Classify it:
+  • salary (راتب) → income, category "راتب", from "الشركة".
+  • reimbursement of company costs he paid privately (استرداد مصاريف، Auslagen) → income, category "استرداد مصاريف من الشركة", from "الشركة".
+  • salary advance (سلفة، Vorschuss) → debt, direction "owe", counterparty "الشركة", kind "company_advance".
+  • loan (قرض، Darlehen) → debt, direction "owe", counterparty "الشركة", kind "company_loan".
+  • If he does not say which one: record it as a salary advance (debt, direction "owe", counterparty "الشركة", kind "company_advance"), set needs_review = true and ask exactly: «هل هذا المبلغ من الشركة راتب، أم سلفة تُخصم من الراتب، أم استرداد مصاريف دفعتها عن الشركة؟»
+- Salary from which an advance was deducted (e.g. "قبضت الراتب 2000 وانخصم منه 500 سلفة"): an income "راتب" with the amount BEFORE the deduction (2500) AND a repayment (direction "owe", counterparty "الشركة", amount 500) linked to the open company advance.
+- Money he pays back to the company → repayment, direction "owe", counterparty "الشركة".
 
-12. Write all descriptive text in Arabic. Use a dot as decimal separator in numbers.`;
+RULES FOR DEBTS
+- direction "owe" (عليّ): أخذت من فلان دين، استدنت، تدينت، فلان داينّي، عليّ لفلان. direction "owed" (لي): أعطيت فلان دين، دينت فلان، لي عند فلان، فلان مديون لي.
+- counterparty: the person as he names him (e.g. "أبو محمد", "خالي", "Ahmad"). Reuse the exact spelling from KNOWN PEOPLE when it is the same person.
+- kind: "personal", except for company money (see THE COMPANY).
+- due_date: "YYYY-MM-DD", resolved from NOW for phrases like "ليوم الجمعة", "لآخر الشهر", "خلال أسبوعين" (= NOW + 14 days), "بعد شهر" (= same day next month), "لأول الشهر الجاي"; null if he gives no deadline.
+- started_at_local: only if the debt started at another time (e.g. "مبارح") → "YYYY-MM-DD HH:MM"; otherwise null.
+- reason: why the money was borrowed or lent (e.g. "لتصليح السيارة"), otherwise null.
+
+RULES FOR REPAYMENTS
+- Match each repayment to OPEN DEBTS by person and direction and put that debt's ref into debt_ref. If several match, use the one with the earliest due date. If none matches, debt_ref = null, set needs_review = true and ask whether it is a new debt.
+- amount: what was paid now (partial repayments are normal). paid_at_local like spent_at_local (null = now).
+
+GENERAL
+- Never invent amounts. Use exactly what was said or printed. Currency is EUR unless clearly stated otherwise.
+- Understand spoken Arabic numbers including dialect, e.g. "خمسطعش" = 15, "ميتين" = 200, "ألف وخمسمية" = 1500, "اتنين ونص" = 2.5, "عشرة وربع" = 10.25. The word "يورو" may be omitted.
+- needs_review = true if an amount is missing or unclear, the audio is unintelligible, or you are unsure about an important value. Then ask ONE short Arabic question in "question" (only one question for the whole message). Still fill in everything you can.
+- If the input contains no entry at all, return all arrays empty and explain briefly in "question".
+- transcript: write what the user said in Arabic script (keep German words as spoken). If there was no audio, write a one-line Arabic summary of the input (e.g. "فاتورة من Kaufland").
+- Write all descriptive text in Arabic. Use a dot as decimal separator in numbers.`;
 
 const N = (type: string, extra: Record<string, unknown> = {}) => ({ type, nullable: true, ...extra });
 
@@ -137,8 +172,58 @@ const SCHEMA = {
         required: ["at_current_location", "currency", "total", "items"],
       },
     },
+    incomes: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          received_at_local: N("STRING", { description: "YYYY-MM-DD HH:MM or null" }),
+          from: N("STRING"),
+          category: { type: "STRING" },
+          amount: { type: "NUMBER" },
+          currency: { type: "STRING" },
+          purpose: N("STRING"),
+          note: N("STRING"),
+          payment_method: N("STRING"),
+        },
+        required: ["category", "amount", "currency"],
+      },
+    },
+    debts: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          direction: { type: "STRING", format: "enum", enum: ["owe", "owed"] },
+          counterparty: { type: "STRING" },
+          amount: { type: "NUMBER" },
+          currency: { type: "STRING" },
+          kind: { type: "STRING", format: "enum", enum: ["personal", "company_advance", "company_loan"] },
+          started_at_local: N("STRING", { description: "YYYY-MM-DD HH:MM or null" }),
+          due_date: N("STRING", { description: "YYYY-MM-DD or null" }),
+          reason: N("STRING"),
+          note: N("STRING"),
+        },
+        required: ["direction", "counterparty", "amount", "currency", "kind"],
+      },
+    },
+    repayments: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          direction: { type: "STRING", format: "enum", enum: ["owe", "owed"] },
+          counterparty: { type: "STRING" },
+          amount: { type: "NUMBER" },
+          paid_at_local: N("STRING", { description: "YYYY-MM-DD HH:MM or null" }),
+          debt_ref: N("STRING"),
+          note: N("STRING"),
+        },
+        required: ["direction", "counterparty", "amount"],
+      },
+    },
   },
-  required: ["transcript", "needs_review", "expenses"],
+  required: ["transcript", "needs_review", "expenses", "incomes", "debts", "repayments"],
 };
 
 type Meta = {
@@ -149,11 +234,17 @@ type Meta = {
   audio_seconds?: number;
   categories?: string[];
   items?: { name: string; category?: string | null; unit?: string | null }[];
+  income_categories?: string[];
+  counterparties?: string[];
+  open_debts?: { ref: string; direction: string; counterparty: string; remaining: number; due_date?: string | null; kind?: string | null }[];
 };
 
 function buildContext(meta: Meta, hasAudio: boolean, imageCount: number): string {
   const cats = (meta.categories ?? []).filter(Boolean).slice(0, 80);
   const items = (meta.items ?? []).filter((i) => i && i.name).slice(0, 300);
+  const incomeCats = (meta.income_categories ?? []).filter(Boolean).slice(0, 40);
+  const people = (meta.counterparties ?? []).filter(Boolean).slice(0, 80);
+  const debts = (meta.open_debts ?? []).filter((d) => d && d.ref && d.counterparty).slice(0, 40);
   const input: string[] = [];
   if (hasAudio) input.push(`تسجيل صوتي${meta.audio_seconds ? ` (${Math.round(meta.audio_seconds)} ثانية)` : ""}`);
   if (imageCount) input.push(`${imageCount} صورة`);
@@ -168,6 +259,13 @@ function buildContext(meta: Meta, hasAudio: boolean, imageCount: number): string
       items.length
         ? items.map((i) => `${i.name} — ${i.category ?? "?"} — ${i.unit ?? "-"}`).join("; ")
         : "(none yet)"
+    }`,
+    `KNOWN INCOME CATEGORIES: ${incomeCats.length ? incomeCats.join(" | ") : "(none yet)"}`,
+    `KNOWN PEOPLE: ${people.length ? people.join(" | ") : "(none yet)"}`,
+    `OPEN DEBTS (ref — direction — person — remaining € — due — kind): ${
+      debts.length
+        ? debts.map((d) => `${d.ref} — ${d.direction} — ${d.counterparty} — ${d.remaining} — ${d.due_date || "-"} — ${d.kind || "personal"}`).join("; ")
+        : "(none)"
     }`,
   ].filter(Boolean).join("\n");
 }
