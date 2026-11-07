@@ -4,7 +4,9 @@
 //
 // Secrets (Supabase → Edge Functions → Secrets):
 //   GEMINI_API_KEY  (required)  – key from Google AI Studio (paid tier → data not used for training)
-//   GEMINI_MODEL    (optional)  – comma separated model list, default "gemini-2.5-flash,gemini-flash-latest"
+//   GEMINI_MODEL    (optional)  – comma separated model list (tried in order), default:
+//                                 "gemini-3.5-flash-lite,gemini-3.8-flash,gemini-flash-lite-latest,gemini-flash-latest"
+// Keys from AI Studio may start with "AQ." (new auth-key format) – they work with the x-goog-api-key header.
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -172,13 +174,13 @@ function buildContext(meta: Meta, hasAudio: boolean, imageCount: number): string
 
 function thinkingFor(model: string): Record<string, unknown> | undefined {
   if (/^gemini-2\.5/.test(model)) return { thinkingBudget: 512 };
-  if (/^gemini-(3|flash-latest|flash-lite-latest)/.test(model)) return { thinkingLevel: "low" };
+  if (/^gemini-([3-9]|flash-latest|flash-lite-latest)/.test(model)) return { thinkingLevel: "low" };
   return undefined;
 }
 
 function classifyGeminiError(status: number, text: string): { code: string; error: string } {
   const t = text.toLowerCase();
-  if (t.includes("location is not supported") || t.includes("billing")) {
+  if (t.includes("location is not supported") || (status !== 429 && t.includes("billing"))) {
     return { code: "gemini_billing", error: "Gemini: يجب ربط حساب دفع (Billing) بمفتاح Gemini – الطبقة المجانية غير متاحة في ألمانيا" };
   }
   if (status === 400 && (t.includes("api key not valid") || t.includes("api_key_invalid"))) {
@@ -270,7 +272,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const models = (Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash,gemini-flash-latest")
+  const models = (Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash-lite,gemini-3.8-flash,gemini-flash-lite-latest,gemini-flash-latest")
     .split(",").map((s) => s.trim()).filter(Boolean);
 
   let last = { status: 0, code: "gemini", error: "Gemini: لا يوجد رد", detail: "" };
@@ -339,13 +341,23 @@ Deno.serve(async (req: Request) => {
       const lower = text.toLowerCase();
       console.error(`gemini ${model} HTTP ${r.status}: ${text.slice(0, 800)}`);
 
-      if (r.status === 404) {
-        last = { status: 404, code: "gemini_model", error: `Gemini: النموذج ${model} غير متاح`, detail: text };
-        break; // next model
+      if (lower.includes("location is not supported") || (r.status !== 429 && lower.includes("billing"))) {
+        const c = classifyGeminiError(r.status, text);
+        return fail(402, c.code, c.error, text);
+      }
+      if (r.status === 400 && (lower.includes("api key not valid") || lower.includes("api_key_invalid"))) {
+        return fail(502, "gemini_key", "Gemini: مفتاح API غير صالح", text);
       }
       if (r.status === 400 && thinking && lower.includes("think")) {
         thinking = undefined; // model does not accept this thinking parameter → retry without
         continue;
+      }
+      const modelUnavailable = r.status === 404 || r.status === 401 || r.status === 403 ||
+        (r.status === 400 && /not found|no longer available|not supported for|unsupported model|is not available|not have access/.test(lower));
+      if (modelUnavailable) {
+        const c = classifyGeminiError(r.status, text);
+        last = { status: r.status, code: r.status === 404 ? "gemini_model" : c.code, error: r.status === 404 ? `Gemini: النموذج ${model} غير متاح` : c.error, detail: text };
+        break; // try the next model
       }
       if (r.status === 429 || r.status >= 500) {
         const c = classifyGeminiError(r.status, text);

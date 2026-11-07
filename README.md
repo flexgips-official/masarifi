@@ -25,7 +25,8 @@
 1. **Gemini-Schlüssel**: <https://aistudio.google.com/apikey> → API-Schlüssel erstellen → Abrechnung (Billing) aktivieren
    (in der EU ist der kostenlose Tarif nicht nutzbar; mit Billing werden die Daten nicht zum Training verwendet).
 2. **Supabase** → Projekt `masarifi` → *Edge Functions → Secrets* → `GEMINI_API_KEY` = Schlüssel.
-   Optional `GEMINI_MODEL` (Standard: `gemini-2.5-flash,gemini-flash-latest`).
+   Optional `GEMINI_MODEL` (Standard: `gemini-3.5-flash-lite,gemini-3.8-flash,gemini-flash-lite-latest,gemini-flash-latest`).
+   Neue Schlüssel aus AI Studio beginnen mit `AQ.` – das ist normal.
 3. **Hosting**: GitHub → *Settings → Pages* → *Deploy from a branch* → `main` / `/docs` → *Save*.
    Jeder Push auf `main` wird automatisch veröffentlicht (Adresse: `https://flexgips-official.github.io/masarifi/`).
    Alternativ möglich: Netlify / Cloudflare Pages / Vercel mit Ausgabeordner `docs` (kein Build-Schritt).
