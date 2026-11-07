@@ -64,6 +64,8 @@ def analyze_handler(route, request):
         result = {**empty, 'transcript': text, 'needs_review': True,
                   'question': 'هل هذا المبلغ من الشركة راتب، أم سلفة تُخصم من الراتب، أم استرداد مصاريف دفعتها عن الشركة؟',
                   'debts': [{'direction': 'owe', 'counterparty': 'الشركة', 'amount': 500, 'currency': 'EUR', 'kind': 'company_advance'}]}
+    elif 'الصراف' in text:
+        result = {**empty, 'transcript': text, 'needs_review': False, 'question': 'سحب المال من الصراف نقل بين أموالك ولا يُسجَّل كمصروف.'}
     elif 'هدية' in text:
         result = {**empty, 'transcript': text, 'needs_review': False, 'question': None,
                   'incomes': [{'category': 'هدية', 'amount': 200, 'currency': 'EUR', 'from': 'أبوي'}]}
@@ -393,6 +395,18 @@ def main():
         page.click('.tabs [data-view=add]')
         expect(page.locator('#banners .banner.alert')).to_contain_text('سامر', timeout=8000)
         ok('manual debt (لي) with due date → reminder banner on the home screen')
+
+        # ── nothing to record → explanation + re-analyse button
+        n_before = len(analyze_calls)
+        page.fill('#text-input', 'سحبت 200 من الصراف')
+        page.press('#text-input', 'Enter')
+        expect(page.locator('.q-item.error .q-question')).to_contain_text('الصراف', timeout=15000)
+        page.click('.q-item.error [data-act=reanalyze]')
+        page.wait_for_timeout(1500)
+        assert len(analyze_calls) == n_before + 2, (n_before, len(analyze_calls))
+        page.click('.q-item.error [data-act=del]')
+        expect(page.locator('.q-item')).to_have_count(0, timeout=8000)
+        ok('empty result shows the explanation; "تحليل من جديد" re-runs the analysis')
 
         # ── logout
         page.click('.tabs [data-view=settings]')

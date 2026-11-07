@@ -656,7 +656,8 @@ function queueItemHtml(it) {
     return `<div class="q-item error">${head}
       ${it.result && it.result.transcript ? `<div class="q-transcript">🎤 «${esc(it.result.transcript)}»</div>` : ''}
       <div class="q-question">${esc((it.result && it.result.question) || 'لم أجد مصروفاً أو حركة مالية في هذا الإدخال.')}</div>
-      <div class="q-actions"><button class="btn small" data-act="manual" data-id="${it.id}" type="button">✍️ إدخال يدوي</button>${del}</div></div>`;
+      <div class="q-actions"><button class="btn small primary" data-act="reanalyze" data-id="${it.id}" type="button">🔄 تحليل من جديد</button>
+      <button class="btn small" data-act="manual" data-id="${it.id}" type="button">✍️ إدخال يدوي</button>${del}</div></div>`;
   }
   // review
   const r = it.result || {};
@@ -695,7 +696,14 @@ $('#queue').addEventListener('click', async (ev) => {
   if (!it) { renderQueue(); return; }
   const x = it.exps ? it.exps.find((e) => e.id === b.dataset.x) : null;
   try {
-    if (act === 'retry') {
+    if (act === 'reanalyze') {
+      it.result = null;
+      it.exps = [];
+      it.status = 'pending';
+      it.error = null;
+      await ob.put(it);
+      processItem(it.id);
+    } else if (act === 'retry') {
       it.status = 'pending';
       it.error = null;
       if (it.errorCode === 'audio_format') it.useWav = true;
@@ -2039,11 +2047,33 @@ function updateOnline() { $('#offline').hidden = navigator.onLine; }
 window.addEventListener('online', () => { updateOnline(); processAll(); });
 window.addEventListener('offline', updateOnline);
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && state.user) {
+  if (document.visibilityState !== 'visible') return;
+  checkForUpdate();
+  if (state.user) {
     processAll();
     if (state.view === 'add') { loadSummary(); renderBanners(); }
   }
 });
+
+/** A newer version online → reload automatically (only when nothing is in progress on screen). */
+let updateBusy = false;
+async function checkForUpdate() {
+  if (updateBusy || !navigator.onLine) return;
+  updateBusy = true;
+  try {
+    const r = await fetch(`./config.js?v=${Date.now()}`, { cache: 'no-store' });
+    const m = /APP_VERSION\s*=\s*'([^']+)'/.exec(await r.text());
+    if (m && m[1] !== APP_VERSION) {
+      try { const reg = await navigator.serviceWorker?.getRegistration?.(); if (reg) await reg.update(); } catch { /* ignore */ }
+      const safe = !sheetOpen && !rec.active && !state.draftImages.length && !$('#text-input').value;
+      if (safe) location.reload();
+      else toast('يوجد تحديث جديد للتطبيق – سيُطبَّق عند فتحه من جديد', 'info', 5000);
+    }
+  } catch { /* offline or blocked – try again later */ }
+  updateBusy = false;
+}
+setInterval(checkForUpdate, 30 * 60 * 1000);
+setTimeout(checkForUpdate, 4000);
 updateOnline();
 
 let installEvent = null;

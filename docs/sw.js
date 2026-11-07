@@ -1,6 +1,6 @@
 // مصاريفي – service worker: lets the app open without internet (network first, cache as fallback).
 // API calls (Supabase, OpenStreetMap) are never cached.
-const CACHE = 'masarifi-v2.0.0';
+const CACHE = 'masarifi-v2.0.1';
 const SHELL = [
   './',
   './app.css',
@@ -36,7 +36,8 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   event.respondWith(
-    fetch(req)
+    // always revalidate with the server (no stale files from the 10-minute browser cache after an update)
+    fetch(req, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok && res.type === 'basic' && !res.redirected) {
           const copy = res.clone();
