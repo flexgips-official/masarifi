@@ -1,7 +1,7 @@
-// Unit tests for web/lib.js – run: node --test tests/
+// Unit tests for docs/lib.js – run: node --test tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as L from '../web/lib.js';
+import * as L from '../docs/lib.js';
 
 test('parseNum handles German, English and Arabic formats', () => {
   assert.equal(L.parseNum('12,5'), 12.5);

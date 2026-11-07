@@ -10,7 +10,7 @@
 
 | Teil | Technik | Ort |
 |---|---|---|
-| App (Frontend) | statische Web-App (HTML/CSS/JS, PWA), kein Build-Schritt | `web/` → Vercel (Hobby, `vercel.json`) |
+| App (Frontend) | statische Web-App (HTML/CSS/JS, PWA), kein Build-Schritt | `docs/` → GitHub Pages (Branch `main`, Ordner `/docs`) |
 | Datenbank, Login, Belegfotos | Supabase (Projekt `masarifi`, Frankfurt, Free Plan) | `supabase/migrations/` |
 | KI-Analyse | Supabase Edge Function `analyze` → Google Gemini (paid tier) | `supabase/functions/analyze/` |
 | Ortsname aus GPS | OpenStreetMap Nominatim (im Browser) | – |
@@ -26,10 +26,10 @@
    (in der EU ist der kostenlose Tarif nicht nutzbar; mit Billing werden die Daten nicht zum Training verwendet).
 2. **Supabase** → Projekt `masarifi` → *Edge Functions → Secrets* → `GEMINI_API_KEY` = Schlüssel.
    Optional `GEMINI_MODEL` (Standard: `gemini-2.5-flash,gemini-flash-latest`).
-3. **Vercel** (Hobby, kostenlos) → *Add New → Project* → dieses GitHub-Repo importieren → *Deploy*.
-   Einstellungen kommen aus `vercel.json` (Ausgabeordner `web`, kein Build). Jeder Push auf `main` wird automatisch veröffentlicht.
-   (Alternativ Cloudflare Pages mit *Build output directory* `web` – `web/_headers` ist dafür vorbereitet.)
-4. **Supabase** → *Authentication → URL Configuration* → *Site URL* = Adresse der App (z. B. `https://masarifi.vercel.app`).
+3. **Hosting**: GitHub → *Settings → Pages* → *Deploy from a branch* → `main` / `/docs` → *Save*.
+   Jeder Push auf `main` wird automatisch veröffentlicht (Adresse: `https://flexgips-official.github.io/masarifi/`).
+   Alternativ: Vercel (`vercel.json`, Ausgabeordner `docs`) oder Cloudflare Pages / Netlify mit Ausgabeordner `docs`.
+4. **Supabase** → *Authentication → URL Configuration* → *Site URL* = Adresse der App (z. B. `https://flexgips-official.github.io/masarifi/`).
 5. App auf dem Handy öffnen → „إنشاء الحساب“ → E-Mail bestätigen → anmelden → „تثبيت التطبيق“ / Zum Startbildschirm hinzufügen.
 
 ## Entwicklung
@@ -40,4 +40,4 @@ python3 tests/ui_test.py           # End-to-End-Test im Headless-Chrome mit simu
 ```
 
 Änderungen an der Datenbank: neue Datei in `supabase/migrations/`. Edge Function: `supabase/functions/analyze/index.ts`.
-Bei Änderungen an `web/` die Versionsnummer in `web/config.js` und `CACHE` in `web/sw.js` erhöhen.
+Bei Änderungen an `docs/` die Versionsnummer in `docs/config.js` und `CACHE` in `docs/sw.js` erhöhen.

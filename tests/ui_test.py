@@ -9,7 +9,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parent.parent
-WEB = ROOT / 'web'
+WEB = ROOT / 'docs'
 SHOTS = Path('/tmp/masarifi_shots'); SHOTS.mkdir(exist_ok=True)
 PORT = 8765
 FAKE = (ROOT / 'tests' / 'fake-supabase.js').read_text(encoding='utf-8')
