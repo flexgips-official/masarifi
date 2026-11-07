@@ -10,7 +10,7 @@
 
 | Teil | Technik | Ort |
 |---|---|---|
-| App (Frontend) | statische Web-App (HTML/CSS/JS, PWA), kein Build-Schritt | `web/` → Cloudflare Pages |
+| App (Frontend) | statische Web-App (HTML/CSS/JS, PWA), kein Build-Schritt | `web/` → Vercel (Hobby, `vercel.json`) |
 | Datenbank, Login, Belegfotos | Supabase (Projekt `masarifi`, Frankfurt, Free Plan) | `supabase/migrations/` |
 | KI-Analyse | Supabase Edge Function `analyze` → Google Gemini (paid tier) | `supabase/functions/analyze/` |
 | Ortsname aus GPS | OpenStreetMap Nominatim (im Browser) | – |
@@ -26,9 +26,10 @@
    (in der EU ist der kostenlose Tarif nicht nutzbar; mit Billing werden die Daten nicht zum Training verwendet).
 2. **Supabase** → Projekt `masarifi` → *Edge Functions → Secrets* → `GEMINI_API_KEY` = Schlüssel.
    Optional `GEMINI_MODEL` (Standard: `gemini-2.5-flash,gemini-flash-latest`).
-3. **Cloudflare Pages** → mit diesem GitHub-Repo verbinden → Framework: *None*, Build-Befehl: leer,
-   **Build output directory: `web`**.
-4. **Supabase** → *Authentication → URL Configuration* → *Site URL* = Adresse der App (z. B. `https://masarifi.pages.dev`).
+3. **Vercel** (Hobby, kostenlos) → *Add New → Project* → dieses GitHub-Repo importieren → *Deploy*.
+   Einstellungen kommen aus `vercel.json` (Ausgabeordner `web`, kein Build). Jeder Push auf `main` wird automatisch veröffentlicht.
+   (Alternativ Cloudflare Pages mit *Build output directory* `web` – `web/_headers` ist dafür vorbereitet.)
+4. **Supabase** → *Authentication → URL Configuration* → *Site URL* = Adresse der App (z. B. `https://masarifi.vercel.app`).
 5. App auf dem Handy öffnen → „إنشاء الحساب“ → E-Mail bestätigen → anmelden → „تثبيت التطبيق“ / Zum Startbildschirm hinzufügen.
 
 ## Entwicklung
