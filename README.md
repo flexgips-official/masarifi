@@ -28,7 +28,7 @@
    Optional `GEMINI_MODEL` (Standard: `gemini-2.5-flash,gemini-flash-latest`).
 3. **Hosting**: GitHub → *Settings → Pages* → *Deploy from a branch* → `main` / `/docs` → *Save*.
    Jeder Push auf `main` wird automatisch veröffentlicht (Adresse: `https://flexgips-official.github.io/masarifi/`).
-   Alternativ: Vercel (`vercel.json`, Ausgabeordner `docs`) oder Cloudflare Pages / Netlify mit Ausgabeordner `docs`.
+   Alternativ möglich: Netlify / Cloudflare Pages / Vercel mit Ausgabeordner `docs` (kein Build-Schritt).
 4. **Supabase** → *Authentication → URL Configuration* → *Site URL* = Adresse der App (z. B. `https://flexgips-official.github.io/masarifi/`).
 5. App auf dem Handy öffnen → „إنشاء الحساب“ → E-Mail bestätigen → anmelden → „تثبيت التطبيق“ / Zum Startbildschirm hinzufügen.
 
