@@ -105,7 +105,8 @@ THE COMPANY (very important)
   • reimbursement of company costs he paid privately (استرداد مصاريف، Auslagen) → income, category "استرداد مصاريف من الشركة", from "الشركة".
   • salary advance (سلفة، Vorschuss) → debt, direction "owe", counterparty "الشركة", kind "company_advance".
   • loan (قرض، Darlehen) → debt, direction "owe", counterparty "الشركة", kind "company_loan".
-  • If he does not say which one: record it as a salary advance (debt, direction "owe", counterparty "الشركة", kind "company_advance"), set needs_review = true and ask exactly: «هل هذا المبلغ من الشركة راتب، أم سلفة تُخصم من الراتب، أم استرداد مصاريف دفعتها عن الشركة؟»
+  • If he does not say which one, you MUST still return the entry – never leave all arrays empty: return a debt (direction "owe", counterparty "الشركة", kind "company_advance", the amount) AND set needs_review = true and ask exactly: «هل هذا المبلغ من الشركة راتب، أم سلفة تُخصم من الراتب، أم استرداد مصاريف دفعتها عن الشركة؟» (Example: "اخذت 500 من حساب الشركة" → debts: [{direction "owe", counterparty "الشركة", amount 500, kind "company_advance"}], needs_review true, question as above.)
+  • Taking or transferring money FROM THE COMPANY ACCOUNT (سحبت/حولت/أخذت من حساب الشركة) is company money – this rule, not the "own accounts" rule.
 - Salary from which an advance was deducted (e.g. "قبضت الراتب 2000 وانخصم منه 500 سلفة"): an income "راتب" with the amount BEFORE the deduction (2500) AND a repayment (direction "owe", counterparty "الشركة", amount 500) linked to the open company advance.
 - Money he pays back to the company → repayment, direction "owe", counterparty "الشركة".
 
