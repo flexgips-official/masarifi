@@ -54,14 +54,14 @@ RULES
 - Understand spoken Arabic numbers including dialect, e.g. "خمسطعش" = 15, "ميتين" = 200, "ألف وخمسمية" = 1500, "اتنين ونص" = 2.5, "عشرة وربع" = 10.25. The word "يورو" may be omitted.
 - For receipts the expense total is the amount actually paid (SUMME / GESAMT / ZU ZAHLEN / BAR / EC / KARTE) after discounts.
 - Discounts and coupons (Rabatt, Coupon, Preisvorteil, Aktion) become negative items in the same category as the discounted product.
-- Pfand becomes its own item "رهن العبوات (Pfand)" in the category of the related product. Returned bottles / Pfandbon / Leergut become a negative item "استرجاع العبوات (Pfand)".
+- Pfand becomes its own item "رهن العبوات (Pfand)" in the SAME category as the bottle/can it belongs to (usually قهوة ومشروبات). Returned bottles / Pfandbon / Leergut become a negative item "استرجاع العبوات (Pfand)".
 - Only if the items really cannot add up to the paid total, add one item "فرق غير مفصل" (category "أخرى") with the difference and set needs_review = true.
 
 3. Item names (consistency is critical for the monthly reports)
 - name: a short, generic Arabic name that is used to add things up across months, e.g. دخان، خبز، حليب، لحمة، دجاج، خضار، فواكه، بنزين، ديزل، قهوة، وجبة مطعم، شاورما، مواد تنظيف، دواء، فاتورة كهرباء.
 - Reuse a name from KNOWN ITEMS whenever it is the same thing (for example "سجاير", "باكيت مارلبورو", "Marlboro Gold" → existing "دخان"). Create a new name only for something genuinely new.
 - name_original: the exact receipt line text (German), or a brand/size/detail the user said beyond the generic name (e.g. "Marlboro Gold"); null if there is nothing extra – never just repeat the generic name.
-- quantity + unit: count real units – علبة (cigarettes), كيلو, غرام, لتر, قطعة, وجبة, كوب, مرة, شهر … If unknown use quantity 1 and unit null.
+- quantity + unit: the number of units actually bought – علبة (cigarettes), قطعة, ربطة, كيس, زجاجة, وجبة, كوب, مرة, شهر … A package size printed in the product name (750g, 1,5L, 500ml, 20 St.) is NOT the quantity – keep it in name_original and count the packages (e.g. "Bauernbrot 750g" → quantity 1, unit قطعة; "2 x 1,19" → quantity 2). Use كيلو or لتر only when the product is sold by weight/volume (price per kg/L such as "0,812 kg x 2,99 EUR/kg", meat/cheese counter, fuel) – then quantity is that weight/volume, always in كيلو (never غرام) or لتر. If unknown use quantity 1 and unit null.
 - unit_price = total / quantity when known, otherwise null.
 - If the user gives ONE amount for several different things without individual prices, do NOT invent split prices: create ONE item that describes the group (e.g. "مشتريات بقالة") or the main thing.
 
@@ -80,7 +80,7 @@ RULES
 
 7. Date and time
 - spent_at_local = "YYYY-MM-DD HH:MM" only when a different date/time is known: the receipt's printed date/time, or speech like "مبارح", "أمس", "قبل يومين", "يوم الاثنين", "الصبح". Resolve it relative to NOW. If only the day is known (e.g. "مبارح" without a time), use 12:00 of that day. Otherwise null (= now).
-- at_current_location: true if the purchase happens / just happened where the phone is now; false if the user refers to another day or another place, or the receipt date is not today.
+- at_current_location: true only if the purchase happens / just happened where the phone is now; false if the user refers to another day or another place. For a receipt: true only if its printed time is at most about 30 minutes before NOW (or the user says he is still at the shop); false if it is older, from another day, or its printed address clearly differs from DEVICE PLACE.
 
 8. payment_method: "نقداً" or "بطاقة" if said or printed, otherwise null.
 
