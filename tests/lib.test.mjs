@@ -116,6 +116,17 @@ test('normalizeAnalysis – receipt with discount, images, mismatch detection an
   assert.equal(mm.needs_review, true);
 });
 
+test('normalizeAnalysis – no GPS for purchases clearly earlier than the recording', () => {
+  const created = new Date(2026, 10, 7, 9, 30);
+  const one = (stamp) => L.normalizeAnalysis({
+    expenses: [{ spent_at_local: stamp, at_current_location: true, total: 10, items: [{ name: 'دخان', category: 'دخان', quantity: 1, total: 10 }] }],
+  }, { createdAt: created, imageCount: 0 }).expenses[0].at_current_location;
+  assert.equal(one('2026-11-07 08:15'), false); // receipt 75 min old → photographed elsewhere
+  assert.equal(one('2026-11-07 09:10'), true);  // receipt 20 min old → still near the shop
+  assert.equal(one(null), true);                // "now"
+  assert.equal(one('2026-11-06 12:00'), false); // yesterday
+});
+
 test('normalizeAnalysis – garbage input is safe', () => {
   const r = L.normalizeAnalysis(null, { createdAt: new Date(), imageCount: 2 });
   assert.deepEqual(r.expenses, []);

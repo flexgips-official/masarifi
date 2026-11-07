@@ -284,6 +284,8 @@ export function normalizeAnalysis(result, ctx) {
       if (diff > 36 * 3600000 || diff < -2 * 365 * 86400000) when = null; // implausible → ignore
     }
     const spent = when || createdAt;
+    // A purchase clearly earlier than the recording (old receipt, "yesterday") did not happen where the phone is now.
+    const earlier = !!when && createdAt - when > 45 * 60000;
     const cur = (cleanStr(e.currency, 3) || 'EUR').toUpperCase();
     let imgs = (Array.isArray(e.image_indexes) ? e.image_indexes : [])
       .map((x) => parseInt(x, 10))
@@ -291,7 +293,7 @@ export function normalizeAnalysis(result, ctx) {
     imgs = [...new Set(imgs)];
     expenses.push({
       spent_at: spent.toISOString(),
-      at_current_location: e.at_current_location !== false,
+      at_current_location: e.at_current_location !== false && !earlier,
       merchant: cleanStr(e.merchant, 120),
       merchant_address: cleanStr(e.merchant_address, 200),
       purpose: cleanStr(e.purpose, 200),
