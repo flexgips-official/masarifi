@@ -60,7 +60,7 @@ RULES
 3. Item names (consistency is critical for the monthly reports)
 - name: a short, generic Arabic name that is used to add things up across months, e.g. دخان، خبز، حليب، لحمة، دجاج، خضار، فواكه، بنزين، ديزل، قهوة، وجبة مطعم، شاورما، مواد تنظيف، دواء، فاتورة كهرباء.
 - Reuse a name from KNOWN ITEMS whenever it is the same thing (for example "سجاير", "باكيت مارلبورو", "Marlboro Gold" → existing "دخان"). Create a new name only for something genuinely new.
-- name_original: the exact receipt text (German) or the brand/detail the user said; null if there is nothing extra.
+- name_original: the exact receipt line text (German), or a brand/size/detail the user said beyond the generic name (e.g. "Marlboro Gold"); null if there is nothing extra – never just repeat the generic name.
 - quantity + unit: count real units – علبة (cigarettes), كيلو, غرام, لتر, قطعة, وجبة, كوب, مرة, شهر … If unknown use quantity 1 and unit null.
 - unit_price = total / quantity when known, otherwise null.
 - If the user gives ONE amount for several different things without individual prices, do NOT invent split prices: create ONE item that describes the group (e.g. "مشتريات بقالة") or the main thing.
@@ -71,15 +71,15 @@ RULES
 - Every item has its own category (one supermarket receipt can contain food, cigarettes and cleaning products).
 
 5. Purpose
-- purpose: a short Arabic phrase saying WHY or FOR WHOM, taken from what the user said (e.g. "غداء مع زبون", "للبيت", "للمكتب", "هدية لابني"). For a receipt without explanation use a neutral purpose like "مشتريات البيت", or null.
-- note: any other useful detail the user said (who was with him, the reason, remarks) in Arabic, otherwise null.
+- purpose: a short Arabic phrase saying WHY or FOR WHOM – ONLY if the user actually said it (e.g. "غداء مع زبون", "للبيت", "للمكتب", "هدية لابني"). If he did not say why or for whom (also for a receipt without explanation), purpose = null. Never guess or invent a purpose.
+- note: any other useful detail the user said that is not already in purpose (who was with him, remarks) in Arabic, otherwise null.
 
 6. Merchant and place
-- merchant: name of the shop / restaurant / petrol station / company (receipt header or speech). merchant_address: the address printed on the receipt, otherwise null.
+- merchant: name of the shop / restaurant / petrol station / company (receipt header or speech). merchant_address: only an address printed on a receipt, otherwise null (never copy DEVICE PLACE into merchant_address – the app stores the GPS place separately).
 - If the user does not name the shop, the purchase happens at the current device location, and DEVICE PLACE is clearly a shop/restaurant/petrol station name, you may use it as merchant.
 
 7. Date and time
-- spent_at_local = "YYYY-MM-DD HH:MM" only when a different date/time is known: the receipt's printed date/time, or speech like "مبارح", "أمس", "قبل يومين", "يوم الاثنين", "الصبح". Resolve it relative to NOW. Otherwise null (= now).
+- spent_at_local = "YYYY-MM-DD HH:MM" only when a different date/time is known: the receipt's printed date/time, or speech like "مبارح", "أمس", "قبل يومين", "يوم الاثنين", "الصبح". Resolve it relative to NOW. If only the day is known (e.g. "مبارح" without a time), use 12:00 of that day. Otherwise null (= now).
 - at_current_location: true if the purchase happens / just happened where the phone is now; false if the user refers to another day or another place, or the receipt date is not today.
 
 8. payment_method: "نقداً" or "بطاقة" if said or printed, otherwise null.
